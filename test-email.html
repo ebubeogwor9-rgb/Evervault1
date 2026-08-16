@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Evervault Email Test</title>
+<style>
+body { font-family: 'Segoe UI', Arial, sans-serif; background: #1a1f2e; color: #e6eaf2; padding: 40px 20px; }
+.card { background: #242b3d; border-radius: 14px; padding: 28px; max-width: 520px; margin: 0 auto; }
+input { width: 100%; padding: 11px 13px; border: 1px solid #3a4256; border-radius: 8px; font-size: 14px; background: #2c3448; color: #e6eaf2; margin: 8px 0 16px; }
+label { font-size: 13px; font-weight: 600; color: #aab3c7; }
+button { padding: 11px 18px; background: #4d8dff; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+pre { background: #10141c; padding: 14px; border-radius: 8px; margin-top: 18px; white-space: pre-wrap; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>Evervault Email Test</h2>
+  <label>To Email</label>
+  <input type="email" id="to" value="joyg84605@gmail.com">
+  <button id="send">Send Test Email</button>
+  <pre id="out">Press the button to send.</pre>
+</div>
+<script>
+var SERVICE_ID = "service_qmglvqj";
+var TEMPLATE_ID = "template_8e3tjuj";
+var PUBLIC_KEY = "flg6vStLL0JXZCxzv";
+document.getElementById("send").addEventListener("click", function () {
+  var to = document.getElementById("to").value.trim();
+  var out = document.getElementById("out");
+  if (!to) { out.textContent = "Enter an email address."; return; }
+  out.textContent = "Sending...";
+  fetch("https://api.emailjs.com/api/v1.0/email/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      service_id: SERVICE_ID,
+      template_id: TEMPLATE_ID,
+      user_id: PUBLIC_KEY,
+      template_params: {
+        to_email: to,
+        to_name: "Barrett leo",
+        subject: "Evervault test",
+        message: "This is a test receipt email from the Evervault app."
+      }
+    })
+  }).then(function (res) {
+    return res.text().then(function (txt) {
+      out.textContent = "STATUS: " + res.status + "\nBODY:\n" + txt;
+    });
+  }).catch(function (err) {
+    out.textContent = "ERROR: " + err.message;
+  });
+});
+</script>
+</body>
+</html>

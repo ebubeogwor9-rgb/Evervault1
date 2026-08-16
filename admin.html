@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Evervault Admin</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', Arial, sans-serif; background: #1a1f2e; color: #e6eaf2; min-height: 100vh; padding: 30px 0; }
+.card { background: #242b3d; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.4); width: 860px; max-width: 95vw; margin: 0 auto; padding: 28px 26px; }
+.logo { font-size: 26px; font-weight: 700; color: #4d8dff; margin-bottom: 18px; text-align: center; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.logo span { color: #e6eaf2; }
+.logo-icon { display: block; }
+h2 { font-size: 18px; margin-bottom: 8px; color: #fff; }
+.sub { color: #8a93a8; font-size: 13px; margin-bottom: 18px; }
+label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 5px; color: #aab3c7; }
+input, select { width: 100%; padding: 11px 13px; border: 1px solid #3a4256; border-radius: 8px; font-size: 14px; background: #2c3448; color: #e6eaf2; outline: none; }
+input:focus, select:focus { border-color: #4d8dff; }
+button { padding: 11px 18px; background: #4d8dff; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 14px; }
+button:hover { background: #3a78e8; }
+button.secondary { background: #3a4256; }
+button.secondary:hover { background: #46506a; }
+button.danger { background: #c0392b; }
+button.danger:hover { background: #a93226; }
+.error { color: #ff6b6b; font-size: 13px; margin-top: 10px; min-height: 16px; }
+.hidden { display: none; }
+.stats { display: flex; gap: 12px; margin-bottom: 20px; }
+.stat { flex: 1; background: #2c3448; border-radius: 10px; padding: 14px; }
+.stat .k { font-size: 12px; color: #8a93a8; }
+.stat .v { font-size: 20px; font-weight: 700; margin-top: 4px; }
+.user-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #2c3448; border: 1px solid #3a4256; border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
+.user-row:hover { border-color: #4d8dff; }
+.user-row .name { font-weight: 600; }
+.user-row .uname { font-size: 12px; color: #8a93a8; }
+.user-row .bal { font-size: 13px; color: #aab3c7; }
+.user-row .bal strong { color: #fff; }
+.badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px; margin-left: 8px; }
+.badge.ok { background: #1f5c3a; color: #7ff0a8; }
+.badge.sus { background: #5c1f1f; color: #ff9a9a; }
+.editor { background: #2c3448; border: 1px solid #3a4256; border-radius: 10px; padding: 18px; margin-top: 20px; }
+.editor-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.editor-grid { display: flex; gap: 14px; }
+.editor-grid > div { flex: 1; }
+.history-list { margin-top: 8px; max-height: 200px; overflow-y: auto; }
+.h-row { display: flex; justify-content: space-between; padding: 7px 2px; border-bottom: 1px solid #3a4256; font-size: 13px; }
+.h-row .d { color: #aab3c7; }
+.h-row .a { font-weight: 600; }
+.credit { color: #7ff0a8; }
+.debit { color: #ff9a9a; }
+.link-line { text-align: center; margin-top: 16px; font-size: 13px; color: #8a93a8; }
+.link-line a { color: #4d8dff; cursor: pointer; text-decoration: none; }
+.row-actions { display: flex; gap: 10px; }
+.row-actions button { margin-top: 0; }
+.overlay { position: fixed; inset: 0; background: rgba(15,23,42,.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(2px); }
+.overlay.hidden { display: none; }
+.overlay-card { background: #242b3d; border-radius: 14px; padding: 30px 40px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+.spinner { width: 44px; height: 44px; border: 4px solid #3a4256; border-top-color: #4d8dff; border-radius: 50%; margin: 0 auto 16px; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.overlay-title { font-size: 16px; font-weight: 700; color: #fff; }
+.overlay-sub { font-size: 13px; color: #8a93a8; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<div class="card" id="loginView">
+  <div class="logo"><svg class="logo-icon" viewBox="0 0 40 40" width="40" height="40" aria-hidden="true"><rect x="3" y="7" width="34" height="26" rx="7" fill="#4d8dff"/><circle cx="20" cy="20" r="8.5" fill="#fff"/><circle cx="20" cy="20" r="5.5" fill="none" stroke="#4d8dff" stroke-width="1.8"/><circle cx="20" cy="19.5" r="2.4" fill="#4d8dff"/><rect x="18.9" y="20.4" width="2.2" height="5" fill="#4d8dff" rx="1"/></svg>Ever<span>vault</span> Admin</div>
+  <h2>Admin Sign In</h2>
+  <p class="sub">Authorized personnel only.</p>
+  <form id="adminLogin">
+    <label for="auser">Admin Username</label>
+    <input type="text" id="auser" required>
+    <label for="apass">Password</label>
+    <input type="password" id="apass" required>
+    <button type="submit">Sign In</button>
+  </form>
+  <div class="error" id="loginError"></div>
+</div>
+
+<div class="overlay hidden" id="loadingOverlay">
+  <div class="overlay-card">
+    <div class="spinner"></div>
+    <div class="overlay-title" id="loadTitle">Loading</div>
+    <div class="overlay-sub" id="loadSub">Please wait...</div>
+  </div>
+</div>
+
+<div class="card hidden" id="adminView">
+  <div class="logo"><svg class="logo-icon" viewBox="0 0 40 40" width="40" height="40" aria-hidden="true"><rect x="3" y="7" width="34" height="26" rx="7" fill="#4d8dff"/><circle cx="20" cy="20" r="8.5" fill="#fff"/><circle cx="20" cy="20" r="5.5" fill="none" stroke="#4d8dff" stroke-width="1.8"/><circle cx="20" cy="19.5" r="2.4" fill="#4d8dff"/><rect x="18.9" y="20.4" width="2.2" height="5" fill="#4d8dff" rx="1"/></svg>Ever<span>vault</span> Admin</div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">Total Users</div><div class="v" id="statUsers">0</div></div>
+    <div class="stat"><div class="k">Active</div><div class="v" id="statActive">0</div></div>
+    <div class="stat"><div class="k">Suspended</div><div class="v" id="statSuspended">0</div></div>
+    <div class="stat"><div class="k">Total Deposits</div><div class="v" id="statTotal">$0</div></div>
+  </div>
+
+  <div class="editor-head">
+    <h2 style="margin-bottom:0;">Users</h2>
+    <div class="row-actions">
+      <button class="secondary" id="addUserBtn">+ Add User</button>
+      <button class="secondary" id="refreshBtn">Refresh</button>
+      <button class="danger" id="resetBtn">Reset All Data</button>
+      <button class="secondary" id="logoutBtn">Log Out</button>
+    </div>
+  </div>
+  <div id="userList"></div>
+
+  <div class="editor" id="recipDirectory">
+    <h2 style="font-size:16px;">Recipient Directory</h2>
+    <p class="sub">Set an account number and the name you want shown when that number is entered in the app.</p>
+    <div id="recipList"></div>
+    <div class="editor-grid">
+      <div><label>Account Number</label><input type="text" id="rNumber" placeholder="e.g. 1234567890"></div>
+      <div><label>Name to Show</label><input type="text" id="rName" placeholder="e.g. John Smith"></div>
+    </div>
+    <button id="addRecipBtn">Add Recipient</button>
+    <div class="error" id="recipError"></div>
+  </div>
+
+  <div id="editor" class="editor hidden">
+    <div class="editor-head">
+      <h2 id="editorTitle" style="margin-bottom:0;">Edit User</h2>
+      <button class="danger" id="deleteUserBtn">Delete User</button>
+    </div>
+    <div class="editor-grid">
+      <div>
+        <label>Full Name</label>
+        <input type="text" id="eName">
+        <label>Email</label>
+        <input type="text" id="eEmail">
+        <label>Phone Number</label>
+        <input type="text" id="ePhone">
+        <label>Checking Balance ($)</label>
+        <input type="number" id="eChecking" step="0.01">
+        <label>Savings Balance ($)</label>
+        <input type="number" id="eSavings" step="0.01">
+        <label>Checking Account Number</label>
+        <input type="text" id="eAcctCheck">
+        <label>Savings Account Number</label>
+        <input type="text" id="eAcctSave">
+        <label>Routing Number</label>
+        <input type="text" id="eRouting">
+      </div>
+      <div>
+        <label>Username</label>
+        <input type="text" id="eUsername">
+        <label>Password (blank = keep current; enter one to send a reset email)</label>
+        <input type="text" id="ePassword">
+        <label>Transfer Count</label>
+        <input type="number" id="eTransfers" min="0">
+        <label>Debit Card Number</label>
+        <input type="text" id="eCardNum">
+        <label>Card Expiry</label>
+        <input type="text" id="eCardExp" placeholder="MM/YY">
+        <label>Card CVV</label>
+        <input type="text" id="eCardCvv">
+        <div class="row-actions" style="margin-top:14px;">
+          <button id="suspendBtn">Suspend</button>
+          <button class="secondary" id="reinstateBtn">Reinstate</button>
+          <button id="saveBtn">Save</button>
+        </div>
+      </div>
+    </div>
+    <div class="error" id="editError"></div>
+    <div id="editOk" class="hidden" style="color:#7ff0a8;font-size:13px;margin-top:8px;">Saved.</div>
+    <h3 style="font-size:14px; margin-top:18px;">Transaction History</h3>
+    <div class="history-list" id="eHistory"></div>
+    <button class="secondary" id="clearHistoryBtn" style="margin-top:10px;">Clear History</button>
+    <div class="editor-grid" style="margin-top:14px;">
+      <div>
+        <label>Date</label>
+        <input type="date" id="hDate">
+        <label>Description</label>
+        <input type="text" id="hDesc" placeholder="e.g. Salary deposit">
+      </div>
+      <div>
+        <label>Amount ($)</label>
+        <input type="number" id="hAmt" step="0.01">
+        <label>Type</label>
+        <select id="hType">
+          <option value="credit">Credit (+)</option>
+          <option value="debit">Debit (-)</option>
+        </select>
+      </div>
+    </div>
+    <label>Balance After</label>
+    <input type="number" id="hBal" step="0.01" placeholder="Leave empty to auto-fill">
+    <button id="addHistoryBtn">Add to History</button>
+    <button class="secondary" id="seedHistoryBtn" style="margin-left:10px;">Add History 2020 to Date</button>
+    <div class="error" id="hError"></div>
+    <div class="hidden" id="editHistoryBox" style="margin-top:14px; border-top:1px solid #3a4256; padding-top:14px;">
+      <h3 style="font-size:14px;">Edit History Entry</h3>
+      <div class="editor-grid">
+        <div>
+          <label>Date</label>
+          <input type="date" id="edDate">
+          <label>Description</label>
+          <input type="text" id="edDesc" placeholder="e.g. Salary deposit">
+        </div>
+        <div>
+          <label>Amount ($)</label>
+          <input type="number" id="edAmt" step="0.01">
+          <label>Type</label>
+          <select id="edType">
+            <option value="credit">Credit (+)</option>
+            <option value="debit">Debit (-)</option>
+          </select>
+        </div>
+      </div>
+      <label>Balance After</label>
+      <input type="number" id="edBal" step="0.01">
+      <button id="saveHistBtn">Save Changes</button>
+      <button class="secondary" id="cancelHistBtn">Cancel</button>
+      <div class="error" id="edError"></div>
+    </div>
+    <h3 style="font-size:14px; margin-top:18px;">Notifications</h3>
+    <div class="history-list" id="eNotifications"></div>
+    <div class="editor-grid" style="margin-top:12px;">
+      <div>
+        <label>Notification Message</label>
+        <input type="text" id="nMsg" placeholder="e.g. Your transfer of $500 was completed">
+      </div>
+      <div style="display:flex; align-items:flex-end;">
+        <button id="addNotifBtn" style="margin-top:0;width:100%;">Add Notification</button>
+      </div>
+    </div>
+    <div class="error" id="nError"></div>
+  </div>
+
+  <div id="addForm" class="editor hidden">
+    <h2 style="font-size:16px;">Add New User</h2>
+    <div class="editor-grid">
+      <div>
+        <label>Full Name</label>
+        <input type="text" id="aName">
+        <label>Email</label>
+        <input type="text" id="aEmail" placeholder="e.g. john@example.com">
+        <label>Phone Number</label>
+        <input type="text" id="aPhone" placeholder="e.g. (555) 123-4567">
+        <label>Username</label>
+        <input type="text" id="aUsername">
+      </div>
+      <div>
+        <label>Password</label>
+        <input type="text" id="aPassword">
+        <label>Starting Checking ($)</label>
+        <input type="number" id="aChecking" value="0" step="0.01">
+      </div>
+    </div>
+    <div class="editor-grid">
+      <div>
+        <label>Checking Account Number</label>
+        <input type="text" id="aAcctCheck" placeholder="Auto-generate if left empty">
+      </div>
+      <div>
+        <label>Savings Account Number</label>
+        <input type="text" id="aAcctSave" placeholder="Auto-generate if left empty">
+      </div>
+    </div>
+    <label>Routing Number</label>
+    <input type="text" id="aRouting" placeholder="Auto-generate if left empty">
+    <label>Starting Savings ($)</label>
+    <input type="number" id="aSavings" value="0" step="0.01">
+    <div class="row-actions">
+      <button id="createBtn">Create User</button>
+      <button class="secondary" id="cancelAddBtn">Cancel</button>
+    </div>
+    <div class="error" id="addError"></div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>

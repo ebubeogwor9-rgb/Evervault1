@@ -1,0 +1,17 @@
+{
+  "name": "evervault",
+  "version": "1.0.0",
+  "description": "Evervault banking demo - server backend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "better-sqlite3": "^11.9.1",
+    "nodemailer": "^9.0.5"
+  }
+}

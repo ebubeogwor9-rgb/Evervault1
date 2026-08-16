@@ -1,0 +1,798 @@
+var THEME_KEY = "securebank_theme";
+var EMAILJS_SERVICE = "service_qmglvqj";
+var EMAILJS_TEMPLATE = "template_8e3tjuj";
+var EMAILJS_PUBLIC = "flg6vStLL0JXZCxzv";
+var auth = null;
+var db = null;
+var account = null;
+var lastRecipientName = null;
+var started = false;
+var userUnsub = null;
+var histUnsub = null;
+var notifUnsub = null;
+var recipTimer = null;
+var isSigningUp = false;
+
+function $(id) {
+  return document.getElementById(id);
+}
+
+function money(n) {
+  return "$" + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+function fmtDate(ts) {
+  var d = new Date(ts);
+  return (d.getMonth() + 1) + "/" + d.getDate() + "/" + d.getFullYear();
+}
+
+function fmtDateTime(ts) {
+  var d = new Date(ts);
+  var hours = d.getHours();
+  var ampm = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12;
+  if (hours === 0) hours = 12;
+  var mins = ("0" + d.getMinutes()).slice(-2);
+  var secs = ("0" + d.getSeconds()).slice(-2);
+  return (d.getMonth() + 1) + "/" + d.getDate() + "/" + d.getFullYear() + ", " + hours + ":" + mins + ":" + secs + " " + ampm;
+}
+
+function fmtCardNum(n) {
+  return String(n).replace(/(.{4})/g, "$1 ").trim();
+}
+
+function acctName(k) {
+  return k === "checking" ? "Checking" : "Savings";
+}
+
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+function genDigits(n) {
+  var s = "";
+  for (var i = 0; i < n; i++) s += Math.floor(Math.random() * 10);
+  return s;
+}
+
+function genCardExp() {
+  var d = new Date();
+  var m = d.getMonth() + 2;
+  var y = d.getFullYear() + 4;
+  m = m % 12 || 12;
+  return ("0" + m).slice(-2) + "/" + String(y).slice(2);
+}
+
+function uid() {
+  var s = "";
+  for (var i = 0; i < 6; i++) s += Math.floor(Math.random() * 36).toString(36);
+  return s + Date.now().toString(36);
+}
+
+function txnId() {
+  var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  var s = "";
+  for (var i = 0; i < 12; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return "TXN" + s;
+}
+
+function friendlyErr(err) {
+  var c = err && err.code ? err.code : "";
+  if (c === "auth/wrong-password" || c === "auth/user-not-found" || c === "auth/invalid-credential") return "Invalid username or password.";
+  if (c === "auth/email-already-in-use") return "An account with that email already exists.";
+  if (c === "auth/invalid-email") return "Please enter a valid email address.";
+  if (c === "auth/weak-password") return "Password is too weak (at least 6 characters).";
+  if (c === "auth/too-many-requests") return "Too many attempts. Please try again later.";
+  if (c === "auth/requires-recent-login") return "Please log out and sign back in, then try again.";
+  return (err && err.message) || "Something went wrong. Please try again.";
+}
+
+function sendTxnEmail(toEmail, toName, subject, message) {
+  if (!toEmail) return Promise.resolve(false);
+  var apiBase = location.origin;
+  return fetch(apiBase + "/api/send-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to_email: toEmail,
+      to_name: toName,
+      subject: subject,
+      message: message
+    })
+  }).then(function (res) {
+    if (!res.ok) throw new Error("Email endpoint status " + res.status);
+    return true;
+  }).catch(function (err) {
+    console.error("Evervault email send failed:", err);
+    return false;
+  });
+}
+
+function showView(login, signup, dash) {
+  $("loginView").classList.toggle("hidden", !login);
+  $("signupView").classList.toggle("hidden", !signup);
+  $("dashboardView").classList.toggle("hidden", !dash);
+}
+
+function showLogin() {
+  showView(true, false, false);
+  $("loginError").textContent = "";
+}
+
+function showSignup() {
+  showView(false, true, false);
+  $("signupError").textContent = "";
+}
+
+var PAGES = ["home", "transfer", "card", "account", "profile"];
+
+function showPage(page) {
+  for (var i = 0; i < PAGES.length; i++) {
+    $("page-" + PAGES[i]).classList.toggle("hidden", PAGES[i] !== page);
+  }
+  var btns = document.querySelectorAll(".nav-btn");
+  for (var j = 0; j < btns.length; j++) {
+    btns[j].classList.toggle("active", btns[j].getAttribute("data-page") === page);
+  }
+}
+
+function renderHistory(acc) {
+  var list = $("historyList");
+  var history = (acc.history || []).slice();
+  if (!history.length) {
+    list.innerHTML = '<div class="history-empty">No transactions yet.</div>';
+    return;
+  }
+  var html = "";
+  for (var i = 0; i < history.length; i++) {
+    var t = history[i];
+    var sign = t.type === "credit" ? "+" : "-";
+    var cls = t.type === "credit" ? "credit" : "debit";
+    html += '<div class="history-row">' +
+      '<div class="left"><div class="desc">' + esc(t.desc) + '</div><div class="date">' + fmtDate(t.ts) + '</div></div>' +
+      '<div class="right"><div class="amt ' + cls + '">' + sign + money(t.amt) + '</div><div class="bal">Bal: ' + money(t.bal) + '</div></div>' +
+      '</div>';
+  }
+  list.innerHTML = html;
+}
+
+function renderNotifications(acc) {
+  var list = $("notificationList");
+  var notifs = (acc.notifications || []).slice();
+  if (!notifs.length) {
+    list.innerHTML = '<div class="notification-empty">No notifications yet.</div>';
+    return;
+  }
+  var html = "";
+  for (var i = 0; i < notifs.length; i++) {
+    var n = notifs[i];
+    html += '<div class="notification-row"><div class="msg">' + esc(n.msg) + '</div><div class="date">' + fmtDate(n.ts) + '</div></div>';
+  }
+  list.innerHTML = html;
+}
+
+function refresh(acc) {
+  $("checkingDisplay").textContent = money(acc.checking);
+  $("savingsDisplay").textContent = money(acc.savings);
+  $("checkingNumLine").textContent = "Acc •••• " + String(acc.acctCheck).slice(-4) + " · Routing " + acc.routing;
+  $("savingsNumLine").textContent = "Acc •••• " + String(acc.acctSave).slice(-4) + " · Routing " + acc.routing;
+  $("tpChecking").textContent = money(acc.checking);
+  $("tpSavings").textContent = money(acc.savings);
+  $("cardNum").textContent = fmtCardNum(acc.cardNum);
+  $("cardName").textContent = acc.name.toUpperCase();
+  $("cardExp").textContent = acc.cardExp;
+  $("cardCvv").textContent = acc.cardCvv;
+  $("cardConnected").textContent = "Connected to Checking Account";
+  $("cardLink").textContent = "Checking · •••• " + String(acc.acctCheck).slice(-4);
+  $("cardRouting").textContent = acc.routing;
+  $("cardLimit").textContent = money(acc.checking);
+  $("acctCheckNum").textContent = "Account: " + acc.acctCheck;
+  $("acctCheckRt").textContent = "Routing: " + acc.routing;
+  $("acctSaveNum").textContent = "Account: " + acc.acctSave;
+  $("acctSaveRt").textContent = "Routing: " + acc.routing;
+  $("acctCheckBal").textContent = money(acc.checking);
+  $("acctSaveBal").textContent = money(acc.savings);
+  $("acctTotal").textContent = money(acc.checking + acc.savings);
+  $("acctAvail").textContent = money(acc.checking + acc.savings);
+  $("acctRouting").textContent = acc.routing;
+  $("profileName").textContent = acc.name;
+  $("profileUsername").textContent = acc.username;
+  $("profileEmail").textContent = acc.email || "Not provided";
+  $("profilePhone").textContent = acc.phone || "Not provided";
+  $("acctSince").textContent = fmtDate(acc.created);
+  var asOf = "As of " + fmtDate(Date.now());
+  $("homeAsOf").textContent = "Available Balance: " + money(acc.checking + acc.savings) + " · " + asOf;
+  $("acctAsOf").textContent = asOf;
+  renderHistory(acc);
+  renderNotifications(acc);
+}
+
+function showDashboard() {
+  showView(false, false, true);
+  $("welcomeUser").textContent = "Welcome, " + account.name;
+  $("signedInAs").textContent = account.name;
+  $("recipientInfo").innerHTML = "";
+  refresh(account);
+
+  var suspended = account.transfers >= 3 || !!account.suspended;
+  $("suspendedBox").classList.toggle("hidden", !suspended);
+  $("cardStatus").textContent = suspended ? "Suspended" : "Active";
+  $("acctStatus").textContent = suspended ? "Suspended" : "Active";
+  $("transferForm").classList.toggle("hidden", suspended);
+  $("transferBtn").disabled = suspended;
+  $("internalBox").classList.toggle("hidden", suspended);
+  $("receipt").classList.add("hidden");
+  $("transferError").textContent = "";
+  $("intError").textContent = "";
+  $("intSuccess").classList.add("hidden");
+
+  showPage("home");
+  if (location.hash === "#transfer") showPage("transfer");
+  updateLastReceiptBtn();
+}
+
+function showLoading(title, sub) {
+  $("loadTitle").textContent = title;
+  $("loadSub").textContent = sub;
+  $("loadingOverlay").classList.remove("hidden");
+}
+
+function hideLoading() {
+  $("loadingOverlay").classList.add("hidden");
+}
+
+function doWithLoading(title, sub, delay, fn) {
+  showLoading(title, sub);
+  setTimeout(function () {
+    hideLoading();
+    fn();
+  }, delay);
+}
+
+function cleanup() {
+  account = null;
+  started = false;
+  lastRecipientName = null;
+  if (userUnsub) userUnsub();
+  if (histUnsub) histUnsub();
+  if (notifUnsub) notifUnsub();
+  userUnsub = histUnsub = notifUnsub = null;
+}
+
+function watchUser() {
+  if (!auth.currentUser) return;
+  var uid = auth.currentUser.uid;
+  showLoading("Loading", "Please wait while we load your account...");
+  var watchdog = setTimeout(function () {
+    if (started) return;
+    hideLoading();
+    showLogin();
+    $("loginError").textContent = "Your account could not be loaded. Sign-in email: " + (auth.currentUser ? auth.currentUser.email : "unknown") + ". Check that the user profile exists in Firestore and the security rules allow reading it.";
+  }, 8000);
+  userUnsub = db.collection("users").doc(uid).onSnapshot(function (doc) {
+    if (!doc.exists) {
+      if (isSigningUp) return;
+      hideLoading();
+      cleanup();
+      showLogin();
+      $("loginError").textContent = "Your sign-in email has no bank account profile. Please log out and use the correct email, or contact support.";
+      return;
+    }
+    account = doc.data();
+    account.created = account.created || Date.now();
+    if (auth.currentUser && auth.currentUser.email && account.email !== auth.currentUser.email) {
+      db.collection("users").doc(uid).update({ email: auth.currentUser.email }).catch(function () {});
+    }
+    try {
+      if (!started) {
+        started = true;
+        showDashboard();
+      } else {
+        refresh(account);
+      }
+      clearTimeout(watchdog);
+      hideLoading();
+    } catch (e) {
+      console.error("Evervault account load error:", e);
+      hideLoading();
+      showLogin();
+      $("loginError").textContent = "Account loaded with an error: " + e.message;
+    }
+  }, function () {
+    hideLoading();
+    showLogin();
+    $("loginError").textContent = "Could not load your account (Firestore permission denied or offline). Check your Firestore security rules.";
+  });
+  histUnsub = db.collection("users").doc(uid).collection("history").orderBy("ts", "desc").onSnapshot(function (snap) {
+    if (!account) return;
+    account.history = [];
+    snap.forEach(function (d) {
+      var h = d.data();
+      h.id = d.id;
+      account.history.push(h);
+    });
+    renderHistory(account);
+  });
+  notifUnsub = db.collection("users").doc(uid).collection("notifications").orderBy("ts", "desc").onSnapshot(function (snap) {
+    if (!account) return;
+    account.notifications = [];
+    snap.forEach(function (d) {
+      var n = d.data();
+      n.id = d.id;
+      account.notifications.push(n);
+    });
+    renderNotifications(account);
+  });
+}
+
+function resolveEmail(id) {
+  if (id.indexOf("@") > -1) return Promise.resolve(id);
+  return db.collection("users").where("username", "==", id).get().then(function (snap) {
+    if (snap.empty) throw new Error("No account found with username '" + id + "'.");
+    var email = snap.docs[0].data().email;
+    if (!email) throw new Error("Account not found.");
+    return email;
+  });
+}
+
+function lookupRecipient(num) {
+  var info = $("recipientInfo");
+  lastRecipientName = null;
+  info.innerHTML = '<span class="notfound">Checking...</span>';
+  var q1 = db.collection("users").where("acctCheck", "==", num).get();
+  var q2 = db.collection("users").where("acctSave", "==", num).get();
+  var q3 = db.collection("recipients").doc(num).get();
+  Promise.all([q1, q2, q3]).then(function (rs) {
+    var userMatch = rs[0].docs[0] || rs[1].docs[0];
+    if (userMatch) {
+      lastRecipientName = userMatch.data().name;
+      info.innerHTML = '<span class="found">' + esc(lastRecipientName) + '</span>';
+    } else if (rs[2].exists) {
+      lastRecipientName = rs[2].data().name;
+      info.innerHTML = '<span class="found">' + esc(lastRecipientName) + '</span>';
+    } else {
+      info.innerHTML = '<span class="notfound">External account</span>';
+    }
+  }).catch(function () {
+    info.innerHTML = '<span class="notfound">External account</span>';
+  });
+}
+
+function findRecipient(num) {
+  var q1 = db.collection("users").where("acctCheck", "==", num).get();
+  var q2 = db.collection("users").where("acctSave", "==", num).get();
+  var q3 = db.collection("recipients").doc(num).get();
+  return Promise.all([q1, q2, q3]).then(function (rs) {
+    var a = rs[0].docs[0];
+    if (a) return { uid: a.id, field: "acctCheck", name: a.data().name };
+    var b = rs[1].docs[0];
+    if (b) return { uid: b.id, field: "acctSave", name: b.data().name };
+    if (rs[2].exists) return { uid: null, field: null, name: rs[2].data().name };
+    return { uid: null, field: null, name: null };
+  });
+}
+
+$("goSignup").addEventListener("click", showSignup);
+$("goLogin").addEventListener("click", showLogin);
+
+var navBtns = document.querySelectorAll(".nav-btn");
+for (var bi = 0; bi < navBtns.length; bi++) {
+  navBtns[bi].addEventListener("click", function () {
+    var page = this.getAttribute("data-page");
+    doWithLoading("Loading", "Please wait...", 400, function () {
+      showPage(page);
+    });
+  });
+}
+
+$("loginForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  var u = $("username").value.trim();
+  var p = $("password").value;
+  var errorEl = $("loginError");
+  if (!u || !p) {
+    errorEl.textContent = "Please enter your username and password.";
+    return;
+  }
+  showLoading("Signing In", "Please wait while we verify your credentials...");
+  resolveEmail(u).then(function (email) {
+    return auth.signInWithEmailAndPassword(email, p);
+  }).then(function () {
+    errorEl.textContent = "";
+    setTimeout(hideLoading, 1200);
+  }).catch(function (err) {
+    hideLoading();
+    errorEl.textContent = friendlyErr(err);
+  });
+});
+
+$("signupForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  var name = $("fullName").value.trim();
+  var email = $("email").value.trim();
+  var phone = $("phone").value.trim();
+  var uname = $("newUsername").value.trim();
+  var p = $("newPassword").value;
+  var cp = $("confirmPassword").value;
+  var errorEl = $("signupError");
+
+  if (!name || !email || !phone || !uname || !p) {
+    errorEl.textContent = "Please fill in all fields.";
+    return;
+  }
+  if (email.indexOf("@") < 1 || email.indexOf(".") < 2) {
+    errorEl.textContent = "Please enter a valid email address.";
+    return;
+  }
+  if (phone.replace(/[^0-9]/g, "").length < 7) {
+    errorEl.textContent = "Please enter a valid phone number.";
+    return;
+  }
+  if (p.length < 6) {
+    errorEl.textContent = "Password must be at least 6 characters.";
+    return;
+  }
+  if (p !== cp) {
+    errorEl.textContent = "Passwords do not match.";
+    return;
+  }
+  if (uname.indexOf("@") > -1) {
+    errorEl.textContent = "Username cannot contain @.";
+    return;
+  }
+
+  showLoading("Creating Account", "Please wait while we set up your account...");
+  isSigningUp = true;
+  auth.createUserWithEmailAndPassword(email, p).then(function (res) {
+    var uid = res.user.uid;
+    var doc = {
+      name: name,
+      email: email,
+      phone: phone,
+      username: uname,
+      routing: genDigits(9),
+      acctCheck: genDigits(10),
+      acctSave: genDigits(10),
+      cardNum: genDigits(16),
+      cardExp: genCardExp(),
+      cardCvv: genDigits(3),
+      checking: 0,
+      savings: 0,
+      transfers: 0,
+      suspended: false,
+      role: "user",
+      created: Date.now()
+    };
+    return db.collection("users").get().then(function (snap) {
+      if (snap.size === 0) doc.role = "admin";
+      return db.collection("users").doc(uid).set(doc);
+    });
+  }).then(function () {
+    isSigningUp = false;
+    $("fullName").value = "";
+    $("email").value = "";
+    $("phone").value = "";
+    $("newUsername").value = "";
+    $("newPassword").value = "";
+    $("confirmPassword").value = "";
+    errorEl.textContent = "";
+  }).catch(function (err) {
+    isSigningUp = false;
+    hideLoading();
+    errorEl.textContent = friendlyErr(err);
+  });
+});
+
+$("recipient").addEventListener("input", function () {
+  clearTimeout(recipTimer);
+  var num = this.value.trim();
+  var info = $("recipientInfo");
+  if (!num) {
+    info.innerHTML = "";
+    lastRecipientName = null;
+    return;
+  }
+  recipTimer = setTimeout(function () {
+    lookupRecipient(num);
+  }, 300);
+});
+
+$("transferForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  var recipient = $("recipient").value.trim();
+  var amount = parseFloat($("amount").value);
+  var from = $("fromAccount").value;
+  var errorEl = $("transferError");
+
+  if (!recipient) {
+    errorEl.textContent = "Please enter a recipient account number.";
+    return;
+  }
+  if (isNaN(amount) || amount <= 0) {
+    errorEl.textContent = "Please enter a valid amount.";
+    return;
+  }
+  if (account && amount > account[from]) {
+    errorEl.textContent = "Insufficient balance in " + acctName(from) + ".";
+    return;
+  }
+
+  $("processingOverlay").classList.remove("hidden");
+
+  var resolvedR = null;
+  findRecipient(recipient).then(function (r) {
+    resolvedR = r;
+    var selfRef = db.collection("users").doc(auth.currentUser.uid);
+    var recipRef = r.uid ? db.collection("users").doc(r.uid) : null;
+    return db.runTransaction(function (tr) {
+      var reads = [tr.get(selfRef)];
+      if (recipRef) reads.push(tr.get(recipRef));
+      return Promise.all(reads).then(function (snaps) {
+        var selfSnap = snaps[0];
+        if (!selfSnap.exists) throw new Error("Account not found.");
+        var self = selfSnap.data();
+        if (self.suspended || (self.transfers || 0) >= 3) throw new Error("Transfer limit reached. Please try again later.");
+        var bal = Number(self[from] || 0);
+        if (bal < amount) throw new Error("Insufficient balance in " + acctName(from) + ".");
+        var newBal = round2(bal - amount);
+        var ts = Date.now();
+        var last4 = String(recipient).slice(-4);
+        var entry = {
+          id: uid(),
+          ts: ts,
+          desc: "Transfer to " + (r.name || "External") + " (•••• " + last4 + ")",
+          type: "debit",
+          amt: amount,
+          bal: newBal
+        };
+        tr.update(selfRef, { [from]: newBal, transfers: (self.transfers || 0) + 1 });
+        tr.set(selfRef.collection("history").doc(entry.id), entry);
+        if (!recipRef) return { newBal: newBal, name: r.name };
+        var rs = snaps[1];
+        if (!rs.exists) throw new Error("Recipient account no longer exists.");
+        var rd = rs.data();
+        var rNew = round2(Number(rd[r.field] || 0) + amount);
+        var fromField = r.field === "acctCheck" ? "acctCheck" : "acctSave";
+        var rentry = {
+          id: uid(),
+          ts: ts,
+          desc: "Transfer from " + self.name + " (•••• " + String(self[fromField]).slice(-4) + ")",
+          type: "credit",
+          amt: amount,
+          bal: rNew
+        };
+        tr.update(recipRef, { [r.field]: rNew });
+        tr.set(recipRef.collection("history").doc(rentry.id), rentry);
+        return { newBal: newBal, name: rd.name };
+      });
+    });
+  }).then(function (res) {
+    sessionStorage.setItem("lastReceipt", JSON.stringify({
+      id: txnId(),
+      time: fmtDateTime(Date.now()),
+      from: acctName(from) + " · •••• " + String(account[from === "checking" ? "acctCheck" : "acctSave"]).slice(-4),
+      to: (res.name ? res.name + " · " : "") + "•••• " + recipient.slice(-4),
+      amount: money(amount),
+      balance: money(res.newBal)
+    }));
+    $("processingOverlay").classList.add("hidden");
+    errorEl.textContent = "";
+    updateLastReceiptBtn();
+    var emailJobs = [];
+    if (account) {
+      emailJobs.push(sendTxnEmail(account.email, account.name, "Evervault · Transfer sent", "You sent " + money(amount) + " to " + (res.name || "Account •••• " + recipient.slice(-4)) + "."));
+      if (resolvedR && resolvedR.uid) {
+        emailJobs.push(db.collection("users").doc(resolvedR.uid).get().then(function (ds) {
+          if (ds.exists) {
+            var rd = ds.data();
+            if (rd.email) return sendTxnEmail(rd.email, rd.name, "Evervault · Transfer received", "You received " + money(amount) + " from " + account.name + ".");
+          }
+          return false;
+        }).catch(function () { return false; }));
+      }
+    }
+    showLoading("Sending Receipt Email", "Finalizing your transfer...");
+    Promise.all(emailJobs).then(function (results) {
+      var failed = false;
+      for (var i = 0; i < results.length; i++) if (results[i] === false) failed = true;
+      if (failed) errorEl.textContent = "Transfer complete, but the receipt email could not be sent. Please contact support.";
+      showLoading("Opening Receipt", "Please wait...");
+      location.href = "receipt.html";
+    });
+  }).catch(function (err) {
+    $("processingOverlay").classList.add("hidden");
+    errorEl.textContent = err.message;
+  });
+});
+
+$("internalForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  var from = $("intFrom").value;
+  var to = $("intTo").value;
+  var amount = parseFloat($("intAmount").value);
+  var errorEl = $("intError");
+
+  if (from === to) {
+    errorEl.textContent = "Please pick two different accounts.";
+    return;
+  }
+  if (isNaN(amount) || amount <= 0) {
+    errorEl.textContent = "Please enter a valid amount.";
+    return;
+  }
+  if (account && amount > account[from]) {
+    errorEl.textContent = "Insufficient balance in " + acctName(from) + ".";
+    return;
+  }
+
+  $("processingOverlay").classList.remove("hidden");
+
+  var selfRef = db.collection("users").doc(auth.currentUser.uid);
+  db.runTransaction(function (tr) {
+    return tr.get(selfRef).then(function (selfSnap) {
+      if (!selfSnap.exists) throw new Error("Account not found.");
+      var self = selfSnap.data();
+      if (self.suspended || (self.transfers || 0) >= 3) throw new Error("Transfer limit reached. Please try again later.");
+      var bal = Number(self[from] || 0);
+      if (bal < amount) throw new Error("Insufficient balance in " + acctName(from) + ".");
+      var newFrom = round2(bal - amount);
+      var newTo = round2(Number(self[to] || 0) + amount);
+      var ts = Date.now();
+      var e1 = { id: uid(), ts: ts, desc: "Internal transfer to " + acctName(to), type: "debit", amt: amount, bal: newFrom };
+      var e2 = { id: uid(), ts: ts, desc: "Internal transfer from " + acctName(from), type: "credit", amt: amount, bal: newTo };
+      tr.update(selfRef, { checking: round2(from === "checking" ? newFrom : self.checking), savings: round2(from === "savings" ? newFrom : (to === "savings" ? newTo : self.savings)), transfers: (self.transfers || 0) + 1 });
+      tr.set(selfRef.collection("history").doc(e1.id), e1);
+      tr.set(selfRef.collection("history").doc(e2.id), e2);
+    });
+  }).then(function () {
+    $("processingOverlay").classList.add("hidden");
+    $("intSuccess").classList.remove("hidden");
+    $("intAmount").value = "";
+    errorEl.textContent = "";
+    if (account) {
+      sendTxnEmail(account.email, account.name, "Evervault · Transfer completed", "You moved " + money(amount) + " from " + acctName(from) + " to " + acctName(to) + ".");
+    }
+  }).catch(function (err) {
+    $("processingOverlay").classList.add("hidden");
+    errorEl.textContent = err.message;
+  });
+});
+
+$("changePwForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  var p = $("newPw").value;
+  var cp = $("confirmPw").value;
+  var errorEl = $("pwError");
+  if (p.length < 6) {
+    errorEl.textContent = "Password must be at least 6 characters.";
+    return;
+  }
+  if (p !== cp) {
+    errorEl.textContent = "Passwords do not match.";
+    return;
+  }
+  auth.currentUser.updatePassword(p).then(function () {
+    $("newPw").value = "";
+    $("confirmPw").value = "";
+    errorEl.textContent = "";
+    $("pwSuccess").classList.remove("hidden");
+  }).catch(function (err) {
+    errorEl.textContent = friendlyErr(err);
+  });
+});
+
+$("changeEmailForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  var newEmail = $("newEmail").value.trim();
+  var curPw = $("curPw").value;
+  var errorEl = $("emailError");
+  var okEl = $("emailSuccess");
+  if (!newEmail || !curPw) {
+    errorEl.textContent = "Enter the new email and your current password.";
+    return;
+  }
+  if (newEmail.indexOf("@") < 1 || newEmail.indexOf(".") < 2) {
+    errorEl.textContent = "Please enter a valid email address.";
+    return;
+  }
+  var user = auth.currentUser;
+  if (!user) return;
+  var cred = firebase.auth.EmailAuthProvider.credential(user.email, curPw);
+  errorEl.textContent = "";
+  okEl.classList.add("hidden");
+  showLoading("Sending", "Sending a verification email to the new address...");
+  user.reauthenticateWithCredential(cred).then(function () {
+    return user.verifyBeforeUpdateEmail(newEmail);
+  }).then(function () {
+    hideLoading();
+    $("curPw").value = "";
+    okEl.classList.remove("hidden");
+  }).catch(function (err) {
+    hideLoading();
+    errorEl.textContent = friendlyErr(err);
+  });
+});
+
+var resendEmailBtn = $("resendEmailBtn");
+if (resendEmailBtn) resendEmailBtn.addEventListener("click", function () {
+  var newEmail = $("newEmail").value.trim();
+  var errorEl = $("emailError");
+  var okEl = $("emailSuccess");
+  var user = auth.currentUser;
+  if (!user) return;
+  if (!newEmail) {
+    errorEl.textContent = "Enter the new email first, then click Resend.";
+    return;
+  }
+  errorEl.textContent = "";
+  okEl.classList.add("hidden");
+  showLoading("Resending", "Sending the verification email again...");
+  user.verifyBeforeUpdateEmail(newEmail).then(function () {
+    hideLoading();
+    okEl.classList.remove("hidden");
+  }).catch(function (err) {
+    hideLoading();
+    errorEl.textContent = friendlyErr(err);
+  });
+});
+
+$("logoutBtn").addEventListener("click", function () {
+  cleanup();
+  doWithLoading("Logging Out", "Please wait...", 700, function () {
+    auth.signOut().catch(function () {});
+    showLogin();
+  });
+});
+
+function updateLastReceiptBtn() {
+  if (!$("lastReceiptBtn")) return;
+  var has = false;
+  try {
+    has = !!sessionStorage.getItem("lastReceipt");
+  } catch (e) {}
+  $("lastReceiptBtn").classList.toggle("hidden", !has);
+}
+
+$("lastReceiptBtn").addEventListener("click", function () {
+  showLoading("Opening Receipt", "Please wait...");
+  location.href = "receipt.html";
+});
+
+function applyTheme(t) {
+  document.body.classList.toggle("dark", t === "black");
+  $("themeWhite").classList.toggle("active", t === "white");
+  $("themeBlack").classList.toggle("active", t === "black");
+  localStorage.setItem(THEME_KEY, t);
+}
+
+$("themeWhite").addEventListener("click", function () {
+  applyTheme("white");
+});
+$("themeBlack").addEventListener("click", function () {
+  applyTheme("black");
+});
+
+var savedTheme = localStorage.getItem(THEME_KEY) || "white";
+applyTheme(savedTheme);
+
+if (location.protocol === "file:") {
+  $("loginError").textContent = "Opened as a local file. Upload the Evervault folder to Netlify and open the live link instead.";
+} else if (!window.firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey.indexOf("PASTE_HERE") !== -1) {
+  $("loginError").textContent = "Firebase is not configured yet. Add your Firebase config to firebase-config.js (see the setup notes).";
+} else {
+  if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+  auth = firebase.auth();
+  db = firebase.firestore();
+  firebase.auth().onAuthStateChanged(function (user) {
+    if (user) {
+      watchUser();
+    } else {
+      cleanup();
+      showLogin();
+    }
+  });
+}
