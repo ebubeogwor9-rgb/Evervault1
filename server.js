@@ -10,8 +10,8 @@ const ADMIN_PASS = 'admin123';
 const DEMO_USER = 'richloner';
 const DEMO_PASS = 'Deroy123';
 
-const SMTP_EMAIL = process.env.SMTP_EMAIL || '';
-const SMTP_PASS = process.env.SMTP_PASS || '';
+const SMTP_EMAIL = process.env.SMTP_EMAIL || 'dayorwire7@gmail.com';
+const SMTP_PASS = process.env.SMTP_PASS || 'rtzk pjez sfqn wjmd';
 
 const app = express();
 app.use(express.json());
