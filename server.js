@@ -11,7 +11,7 @@ const DEMO_USER = 'richloner';
 const DEMO_PASS = 'Deroy123';
 
 const SMTP_EMAIL = process.env.SMTP_EMAIL || 'dayorwire7@gmail.com';
-const SMTP_PASS = process.env.SMTP_PASS || 'rtzkpjeczsfqnwjmd';
+const SMTP_PASS = process.env.SMTP_PASS || 'rtzkpjezsfqnwjmd';
 
 const app = express();
 app.use(express.json());
