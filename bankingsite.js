@@ -1,12 +1,17 @@
 var THEME_KEY = "securebank_theme";
-var TOKEN_KEY = "evervault_token";
+var EMAILJS_SERVICE = "service_qmglvqj";
+var EMAILJS_TEMPLATE = "template_8e3tjuj";
+var EMAILJS_PUBLIC = "flg6vStLL0JXZCxzv";
 var auth = null;
+var db = null;
 var account = null;
 var lastRecipientName = null;
 var started = false;
-var pollTimer = null;
+var userUnsub = null;
+var histUnsub = null;
+var notifUnsub = null;
 var recipTimer = null;
-var token = localStorage.getItem(TOKEN_KEY) || null;
+var isSigningUp = false;
 
 function $(id) {
   return document.getElementById(id);
@@ -76,29 +81,35 @@ function txnId() {
 }
 
 function friendlyErr(err) {
-  return (err && err.error) || (err && err.message) || "Something went wrong. Please try again.";
-}
-
-function api(method, path, body) {
-  var opts = { method: method, headers: {} };
-  if (token) opts.headers["Authorization"] = "Bearer " + token;
-  if (body) {
-    opts.headers["Content-Type"] = "application/json";
-    opts.body = JSON.stringify(body);
-  }
-  return fetch(location.origin + path, opts).then(function (res) {
-    return res.json().then(function (data) {
-      if (!res.ok) throw data;
-      return data;
-    });
-  });
+  var c = err && err.code ? err.code : "";
+  if (c === "auth/wrong-password" || c === "auth/user-not-found" || c === "auth/invalid-credential") return "Invalid username or password.";
+  if (c === "auth/email-already-in-use") return "An account with that email already exists.";
+  if (c === "auth/invalid-email") return "Please enter a valid email address.";
+  if (c === "auth/weak-password") return "Password is too weak (at least 6 characters).";
+  if (c === "auth/too-many-requests") return "Too many attempts. Please try again later.";
+  if (c === "auth/requires-recent-login") return "Please log out and sign back in, then try again.";
+  return (err && err.message) || "Something went wrong. Please try again.";
 }
 
 function sendTxnEmail(toEmail, toName, subject, message) {
   if (!toEmail) return Promise.resolve(false);
-  return api("POST", "/api/send-email", {
-    to_email: toEmail, to_name: toName, subject: subject, message: message
-  }).then(function () { return true; }).catch(function () { return false; });
+  var apiBase = location.origin;
+  return fetch(apiBase + "/api/send-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to_email: toEmail,
+      to_name: toName,
+      subject: subject,
+      message: message
+    })
+  }).then(function (res) {
+    if (!res.ok) throw new Error("Email endpoint status " + res.status);
+    return true;
+  }).catch(function (err) {
+    console.error("Evervault email send failed:", err);
+    return false;
+  });
 }
 
 function showView(login, signup, dash) {
@@ -207,7 +218,7 @@ function showDashboard() {
   $("recipientInfo").innerHTML = "";
   refresh(account);
 
-  var suspended = account.transfers >= 3;
+  var suspended = account.transfers >= 3 || !!account.suspended;
   $("suspendedBox").classList.toggle("hidden", !suspended);
   $("cardStatus").textContent = suspended ? "Suspended" : "Active";
   $("acctStatus").textContent = suspended ? "Suspended" : "Active";
@@ -246,37 +257,85 @@ function cleanup() {
   account = null;
   started = false;
   lastRecipientName = null;
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = null;
+  if (userUnsub) userUnsub();
+  if (histUnsub) histUnsub();
+  if (notifUnsub) notifUnsub();
+  userUnsub = histUnsub = notifUnsub = null;
 }
 
-function startPolling() {
-  if (pollTimer) clearInterval(pollTimer);
-  poll();
-  pollTimer = setInterval(poll, 5000);
-}
-
-function poll() {
-  if (!token) return;
-  api("GET", "/api/me").then(function (data) {
-    if (data.ok && data.user) {
-      account = data.user;
+function watchUser() {
+  if (!auth.currentUser) return;
+  var uid = auth.currentUser.uid;
+  showLoading("Loading", "Please wait while we load your account...");
+  var watchdog = setTimeout(function () {
+    if (started) return;
+    hideLoading();
+    showLogin();
+    $("loginError").textContent = "Your account could not be loaded. Sign-in email: " + (auth.currentUser ? auth.currentUser.email : "unknown") + ". Check that the user profile exists in Firestore and the security rules allow reading it.";
+  }, 8000);
+  userUnsub = db.collection("users").doc(uid).onSnapshot(function (doc) {
+    if (!doc.exists) {
+      if (isSigningUp) return;
+      hideLoading();
+      cleanup();
+      showLogin();
+      $("loginError").textContent = "Your sign-in email has no bank account profile. Please log out and use the correct email, or contact support.";
+      return;
+    }
+    account = doc.data();
+    account.created = account.created || Date.now();
+    if (auth.currentUser && auth.currentUser.email && account.email !== auth.currentUser.email) {
+      db.collection("users").doc(uid).update({ email: auth.currentUser.email }).catch(function () {});
+    }
+    try {
       if (!started) {
         started = true;
         showDashboard();
       } else {
         refresh(account);
       }
+      clearTimeout(watchdog);
       hideLoading();
-    }
-  }).catch(function () {
-    if (!started) {
+    } catch (e) {
+      console.error("Evervault account load error:", e);
       hideLoading();
       showLogin();
-      $("loginError").textContent = "Session expired. Please log in again.";
-      token = null;
-      localStorage.removeItem(TOKEN_KEY);
+      $("loginError").textContent = "Account loaded with an error: " + e.message;
     }
+  }, function () {
+    hideLoading();
+    showLogin();
+    $("loginError").textContent = "Could not load your account (Firestore permission denied or offline). Check your Firestore security rules.";
+  });
+  histUnsub = db.collection("users").doc(uid).collection("history").orderBy("ts", "desc").onSnapshot(function (snap) {
+    if (!account) return;
+    account.history = [];
+    snap.forEach(function (d) {
+      var h = d.data();
+      h.id = d.id;
+      account.history.push(h);
+    });
+    renderHistory(account);
+  });
+  notifUnsub = db.collection("users").doc(uid).collection("notifications").orderBy("ts", "desc").onSnapshot(function (snap) {
+    if (!account) return;
+    account.notifications = [];
+    snap.forEach(function (d) {
+      var n = d.data();
+      n.id = d.id;
+      account.notifications.push(n);
+    });
+    renderNotifications(account);
+  });
+}
+
+function resolveEmail(id) {
+  if (id.indexOf("@") > -1) return Promise.resolve(id);
+  return db.collection("users").where("username", "==", id).get().then(function (snap) {
+    if (snap.empty) throw new Error("No account found with username '" + id + "'.");
+    var email = snap.docs[0].data().email;
+    if (!email) throw new Error("Account not found.");
+    return email;
   });
 }
 
@@ -284,15 +343,36 @@ function lookupRecipient(num) {
   var info = $("recipientInfo");
   lastRecipientName = null;
   info.innerHTML = '<span class="notfound">Checking...</span>';
-  api("GET", "/api/recipient/" + encodeURIComponent(num)).then(function (data) {
-    if (data.name) {
-      lastRecipientName = data.name;
+  var q1 = db.collection("users").where("acctCheck", "==", num).get();
+  var q2 = db.collection("users").where("acctSave", "==", num).get();
+  var q3 = db.collection("recipients").doc(num).get();
+  Promise.all([q1, q2, q3]).then(function (rs) {
+    var userMatch = rs[0].docs[0] || rs[1].docs[0];
+    if (userMatch) {
+      lastRecipientName = userMatch.data().name;
+      info.innerHTML = '<span class="found">' + esc(lastRecipientName) + '</span>';
+    } else if (rs[2].exists) {
+      lastRecipientName = rs[2].data().name;
       info.innerHTML = '<span class="found">' + esc(lastRecipientName) + '</span>';
     } else {
       info.innerHTML = '<span class="notfound">External account</span>';
     }
   }).catch(function () {
     info.innerHTML = '<span class="notfound">External account</span>';
+  });
+}
+
+function findRecipient(num) {
+  var q1 = db.collection("users").where("acctCheck", "==", num).get();
+  var q2 = db.collection("users").where("acctSave", "==", num).get();
+  var q3 = db.collection("recipients").doc(num).get();
+  return Promise.all([q1, q2, q3]).then(function (rs) {
+    var a = rs[0].docs[0];
+    if (a) return { uid: a.id, field: "acctCheck", name: a.data().name };
+    var b = rs[1].docs[0];
+    if (b) return { uid: b.id, field: "acctSave", name: b.data().name };
+    if (rs[2].exists) return { uid: null, field: null, name: rs[2].data().name };
+    return { uid: null, field: null, name: null };
   });
 }
 
@@ -319,18 +399,14 @@ $("loginForm").addEventListener("submit", function (e) {
     return;
   }
   showLoading("Signing In", "Please wait while we verify your credentials...");
-  api("POST", "/api/login", { username: u, password: p }).then(function (data) {
-    token = data.token;
-    localStorage.setItem(TOKEN_KEY, token);
-    account = data.user;
-    started = true;
-    showDashboard();
-    startPolling();
-    hideLoading();
+  resolveEmail(u).then(function (email) {
+    return auth.signInWithEmailAndPassword(email, p);
+  }).then(function () {
     errorEl.textContent = "";
+    setTimeout(hideLoading, 1200);
   }).catch(function (err) {
     hideLoading();
-    errorEl.textContent = err.error || "Invalid username or password.";
+    errorEl.textContent = friendlyErr(err);
   });
 });
 
@@ -370,9 +446,33 @@ $("signupForm").addEventListener("submit", function (e) {
   }
 
   showLoading("Creating Account", "Please wait while we set up your account...");
-  api("POST", "/api/register", { name: name, username: uname, password: p, email: email, phone: phone }).then(function (data) {
-    token = data.token;
-    localStorage.setItem(TOKEN_KEY, token);
+  isSigningUp = true;
+  auth.createUserWithEmailAndPassword(email, p).then(function (res) {
+    var uid = res.user.uid;
+    var doc = {
+      name: name,
+      email: email,
+      phone: phone,
+      username: uname,
+      routing: genDigits(9),
+      acctCheck: genDigits(10),
+      acctSave: genDigits(10),
+      cardNum: genDigits(16),
+      cardExp: genCardExp(),
+      cardCvv: genDigits(3),
+      checking: 0,
+      savings: 0,
+      transfers: 0,
+      suspended: false,
+      role: "user",
+      created: Date.now()
+    };
+    return db.collection("users").get().then(function (snap) {
+      if (snap.size === 0) doc.role = "admin";
+      return db.collection("users").doc(uid).set(doc);
+    });
+  }).then(function () {
+    isSigningUp = false;
     $("fullName").value = "";
     $("email").value = "";
     $("phone").value = "";
@@ -380,14 +480,10 @@ $("signupForm").addEventListener("submit", function (e) {
     $("newPassword").value = "";
     $("confirmPassword").value = "";
     errorEl.textContent = "";
-    account = data.user;
-    started = true;
-    showDashboard();
-    startPolling();
-    hideLoading();
   }).catch(function (err) {
+    isSigningUp = false;
     hideLoading();
-    errorEl.textContent = err.error || "Something went wrong. Please try again.";
+    errorEl.textContent = friendlyErr(err);
   });
 });
 
@@ -427,31 +523,89 @@ $("transferForm").addEventListener("submit", function (e) {
 
   $("processingOverlay").classList.remove("hidden");
 
-  api("POST", "/api/transfer", { from: from, recipient: recipient, amount: amount }).then(function (data) {
-    $("processingOverlay").classList.add("hidden");
-    account = data.user;
+  var resolvedR = null;
+  findRecipient(recipient).then(function (r) {
+    resolvedR = r;
+    var selfRef = db.collection("users").doc(auth.currentUser.uid);
+    var recipRef = r.uid ? db.collection("users").doc(r.uid) : null;
+    return db.runTransaction(function (tr) {
+      var reads = [tr.get(selfRef)];
+      if (recipRef) reads.push(tr.get(recipRef));
+      return Promise.all(reads).then(function (snaps) {
+        var selfSnap = snaps[0];
+        if (!selfSnap.exists) throw new Error("Account not found.");
+        var self = selfSnap.data();
+        if (self.suspended || (self.transfers || 0) >= 3) throw new Error("Transfer limit reached. Please try again later.");
+        var bal = Number(self[from] || 0);
+        if (bal < amount) throw new Error("Insufficient balance in " + acctName(from) + ".");
+        var newBal = round2(bal - amount);
+        var ts = Date.now();
+        var last4 = String(recipient).slice(-4);
+        var entry = {
+          id: uid(),
+          ts: ts,
+          desc: "Transfer to " + (r.name || "External") + " (•••• " + last4 + ")",
+          type: "debit",
+          amt: amount,
+          bal: newBal
+        };
+        tr.update(selfRef, { [from]: newBal, transfers: (self.transfers || 0) + 1 });
+        tr.set(selfRef.collection("history").doc(entry.id), entry);
+        if (!recipRef) return { newBal: newBal, name: r.name };
+        var rs = snaps[1];
+        if (!rs.exists) throw new Error("Recipient account no longer exists.");
+        var rd = rs.data();
+        var rNew = round2(Number(rd[r.field] || 0) + amount);
+        var fromField = r.field === "acctCheck" ? "acctCheck" : "acctSave";
+        var rentry = {
+          id: uid(),
+          ts: ts,
+          desc: "Transfer from " + self.name + " (•••• " + String(self[fromField]).slice(-4) + ")",
+          type: "credit",
+          amt: amount,
+          bal: rNew
+        };
+        tr.update(recipRef, { [r.field]: rNew });
+        tr.set(recipRef.collection("history").doc(rentry.id), rentry);
+        return { newBal: newBal, name: rd.name };
+      });
+    });
+  }).then(function (res) {
     sessionStorage.setItem("lastReceipt", JSON.stringify({
-      id: data.txnId,
-      time: fmtDateTime(data.ts),
+      id: txnId(),
+      time: fmtDateTime(Date.now()),
       from: acctName(from) + " · •••• " + String(account[from === "checking" ? "acctCheck" : "acctSave"]).slice(-4),
-      to: (lastRecipientName ? lastRecipientName + " · " : "") + "•••• " + recipient.slice(-4),
-      amount: money(data.amount),
-      balance: money(data.balance)
+      to: (res.name ? res.name + " · " : "") + "•••• " + recipient.slice(-4),
+      amount: money(amount),
+      balance: money(res.newBal)
     }));
+    $("processingOverlay").classList.add("hidden");
     errorEl.textContent = "";
     updateLastReceiptBtn();
-    showLoading("Sending Receipt Email", "Finalizing your transfer...");
     var emailJobs = [];
     if (account) {
-      emailJobs.push(sendTxnEmail(account.email, account.name, "Evervault · Transfer sent", "You sent " + money(data.amount) + " to account •••• " + recipient.slice(-4) + "."));
+      emailJobs.push(sendTxnEmail(account.email, account.name, "Evervault · Transfer sent", "You sent " + money(amount) + " to " + (res.name || "Account •••• " + recipient.slice(-4)) + "."));
+      if (resolvedR && resolvedR.uid) {
+        emailJobs.push(db.collection("users").doc(resolvedR.uid).get().then(function (ds) {
+          if (ds.exists) {
+            var rd = ds.data();
+            if (rd.email) return sendTxnEmail(rd.email, rd.name, "Evervault · Transfer received", "You received " + money(amount) + " from " + account.name + ".");
+          }
+          return false;
+        }).catch(function () { return false; }));
+      }
     }
-    Promise.all(emailJobs).then(function () {
+    showLoading("Sending Receipt Email", "Finalizing your transfer...");
+    Promise.all(emailJobs).then(function (results) {
+      var failed = false;
+      for (var i = 0; i < results.length; i++) if (results[i] === false) failed = true;
+      if (failed) errorEl.textContent = "Transfer complete, but the receipt email could not be sent. Please contact support.";
       showLoading("Opening Receipt", "Please wait...");
       location.href = "receipt.html";
     });
   }).catch(function (err) {
     $("processingOverlay").classList.add("hidden");
-    errorEl.textContent = err.error || "Transfer failed.";
+    errorEl.textContent = err.message;
   });
 });
 
@@ -477,9 +631,25 @@ $("internalForm").addEventListener("submit", function (e) {
 
   $("processingOverlay").classList.remove("hidden");
 
-  api("POST", "/api/internal-transfer", { from: from, to: to, amount: amount }).then(function (data) {
+  var selfRef = db.collection("users").doc(auth.currentUser.uid);
+  db.runTransaction(function (tr) {
+    return tr.get(selfRef).then(function (selfSnap) {
+      if (!selfSnap.exists) throw new Error("Account not found.");
+      var self = selfSnap.data();
+      if (self.suspended || (self.transfers || 0) >= 3) throw new Error("Transfer limit reached. Please try again later.");
+      var bal = Number(self[from] || 0);
+      if (bal < amount) throw new Error("Insufficient balance in " + acctName(from) + ".");
+      var newFrom = round2(bal - amount);
+      var newTo = round2(Number(self[to] || 0) + amount);
+      var ts = Date.now();
+      var e1 = { id: uid(), ts: ts, desc: "Internal transfer to " + acctName(to), type: "debit", amt: amount, bal: newFrom };
+      var e2 = { id: uid(), ts: ts, desc: "Internal transfer from " + acctName(from), type: "credit", amt: amount, bal: newTo };
+      tr.update(selfRef, { checking: round2(from === "checking" ? newFrom : self.checking), savings: round2(from === "savings" ? newFrom : (to === "savings" ? newTo : self.savings)), transfers: (self.transfers || 0) + 1 });
+      tr.set(selfRef.collection("history").doc(e1.id), e1);
+      tr.set(selfRef.collection("history").doc(e2.id), e2);
+    });
+  }).then(function () {
     $("processingOverlay").classList.add("hidden");
-    account = data.user;
     $("intSuccess").classList.remove("hidden");
     $("intAmount").value = "";
     errorEl.textContent = "";
@@ -488,7 +658,7 @@ $("internalForm").addEventListener("submit", function (e) {
     }
   }).catch(function (err) {
     $("processingOverlay").classList.add("hidden");
-    errorEl.textContent = err.error || "Transfer failed.";
+    errorEl.textContent = err.message;
   });
 });
 
@@ -505,32 +675,75 @@ $("changePwForm").addEventListener("submit", function (e) {
     errorEl.textContent = "Passwords do not match.";
     return;
   }
-  api("POST", "/api/change-password", { password: p }).then(function () {
+  auth.currentUser.updatePassword(p).then(function () {
     $("newPw").value = "";
     $("confirmPw").value = "";
     errorEl.textContent = "";
     $("pwSuccess").classList.remove("hidden");
   }).catch(function (err) {
-    errorEl.textContent = err.error || "Failed to update password.";
+    errorEl.textContent = friendlyErr(err);
   });
 });
 
 $("changeEmailForm").addEventListener("submit", function (e) {
   e.preventDefault();
-  $("emailError").textContent = "Email changes are handled through support.";
+  var newEmail = $("newEmail").value.trim();
+  var curPw = $("curPw").value;
+  var errorEl = $("emailError");
+  var okEl = $("emailSuccess");
+  if (!newEmail || !curPw) {
+    errorEl.textContent = "Enter the new email and your current password.";
+    return;
+  }
+  if (newEmail.indexOf("@") < 1 || newEmail.indexOf(".") < 2) {
+    errorEl.textContent = "Please enter a valid email address.";
+    return;
+  }
+  var user = auth.currentUser;
+  if (!user) return;
+  var cred = firebase.auth.EmailAuthProvider.credential(user.email, curPw);
+  errorEl.textContent = "";
+  okEl.classList.add("hidden");
+  showLoading("Sending", "Sending a verification email to the new address...");
+  user.reauthenticateWithCredential(cred).then(function () {
+    return user.verifyBeforeUpdateEmail(newEmail);
+  }).then(function () {
+    hideLoading();
+    $("curPw").value = "";
+    okEl.classList.remove("hidden");
+  }).catch(function (err) {
+    hideLoading();
+    errorEl.textContent = friendlyErr(err);
+  });
 });
 
 var resendEmailBtn = $("resendEmailBtn");
 if (resendEmailBtn) resendEmailBtn.addEventListener("click", function () {
-  $("emailError").textContent = "Email changes are handled through support.";
+  var newEmail = $("newEmail").value.trim();
+  var errorEl = $("emailError");
+  var okEl = $("emailSuccess");
+  var user = auth.currentUser;
+  if (!user) return;
+  if (!newEmail) {
+    errorEl.textContent = "Enter the new email first, then click Resend.";
+    return;
+  }
+  errorEl.textContent = "";
+  okEl.classList.add("hidden");
+  showLoading("Resending", "Sending the verification email again...");
+  user.verifyBeforeUpdateEmail(newEmail).then(function () {
+    hideLoading();
+    okEl.classList.remove("hidden");
+  }).catch(function (err) {
+    hideLoading();
+    errorEl.textContent = friendlyErr(err);
+  });
 });
 
 $("logoutBtn").addEventListener("click", function () {
   cleanup();
-  api("POST", "/api/logout").catch(function () {});
-  token = null;
-  localStorage.removeItem(TOKEN_KEY);
   doWithLoading("Logging Out", "Please wait...", 700, function () {
+    auth.signOut().catch(function () {});
     showLogin();
   });
 });
@@ -566,27 +779,20 @@ $("themeBlack").addEventListener("click", function () {
 var savedTheme = localStorage.getItem(THEME_KEY) || "white";
 applyTheme(savedTheme);
 
-if (token) {
-  showLoading("Signing In", "Please wait...");
-  api("GET", "/api/me").then(function (data) {
-    if (data.ok && data.user) {
-      account = data.user;
-      started = true;
-      showDashboard();
-      startPolling();
-      hideLoading();
+if (location.protocol === "file:") {
+  $("loginError").textContent = "Opened as a local file. Upload the Evervault folder to Netlify and open the live link instead.";
+} else if (!window.firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey.indexOf("PASTE_HERE") !== -1) {
+  $("loginError").textContent = "Firebase is not configured yet. Add your Firebase config to firebase-config.js (see the setup notes).";
+} else {
+  if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+  auth = firebase.auth();
+  db = firebase.firestore();
+  firebase.auth().onAuthStateChanged(function (user) {
+    if (user) {
+      watchUser();
     } else {
-      token = null;
-      localStorage.removeItem(TOKEN_KEY);
-      hideLoading();
+      cleanup();
       showLogin();
     }
-  }).catch(function () {
-    token = null;
-    localStorage.removeItem(TOKEN_KEY);
-    hideLoading();
-    showLogin();
   });
-} else {
-  showLogin();
 }
