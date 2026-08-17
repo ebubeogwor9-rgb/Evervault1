@@ -92,19 +92,13 @@ function friendlyErr(err) {
 }
 
 function sendTxnEmail(toEmail, toName, subject, message) {
-  if (!toEmail) return Promise.resolve(false);
-  var apiBase = location.origin;
-  return fetch(apiBase + "/api/send-email", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      to_email: toEmail,
-      to_name: toName,
-      subject: subject,
-      message: message
-    })
-  }).then(function (res) {
-    if (!res.ok) throw new Error("Email endpoint status " + res.status);
+  if (!toEmail || typeof emailjs === 'undefined') return Promise.resolve(false);
+  return emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, {
+    to_email: toEmail,
+    to_name: toName,
+    subject: subject,
+    message: message
+  }, EMAILJS_PUBLIC).then(function () {
     return true;
   }).catch(function (err) {
     console.error("Evervault email send failed:", err);
@@ -787,6 +781,7 @@ if (location.protocol === "file:") {
   if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
   auth = firebase.auth();
   db = firebase.firestore();
+  if (typeof emailjs !== 'undefined') emailjs.init(EMAILJS_PUBLIC);
   firebase.auth().onAuthStateChanged(function (user) {
     if (user) {
       watchUser();
