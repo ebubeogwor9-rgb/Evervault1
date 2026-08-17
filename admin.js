@@ -34,6 +34,12 @@ function genDigits(n) {
   return s;
 }
 
+function uid() {
+  var s = "";
+  for (var i = 0; i < 6; i++) s += Math.floor(Math.random() * 36).toString(36);
+  return s + Date.now().toString(36);
+}
+
 function genCardExp() {
   var d = new Date();
   var m = d.getMonth() + 2;
