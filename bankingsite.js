@@ -91,14 +91,10 @@ function friendlyErr(err) {
   return (err && err.message) || "Something went wrong. Please try again.";
 }
 
-function sendTxnEmail(toEmail, toName, subject, message) {
+function sendTxnEmail(toEmail, toName, params) {
   if (!toEmail || typeof emailjs === 'undefined') return Promise.resolve(false);
-  return emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, {
-    to_email: toEmail,
-    to_name: toName,
-    subject: subject,
-    message: message
-  }, EMAILJS_PUBLIC).then(function () {
+  var tplParams = Object.assign({ to_email: toEmail, to_name: toName }, params);
+  return emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, tplParams, EMAILJS_PUBLIC).then(function () {
     return true;
   }).catch(function (err) {
     console.error("Evervault email send failed:", err);
@@ -577,13 +573,44 @@ $("transferForm").addEventListener("submit", function (e) {
     errorEl.textContent = "";
     updateLastReceiptBtn();
     var emailJobs = [];
+    var txnTime = fmtDateTime(Date.now());
+    var txnIdVal = txnId();
+    var recipDisplayName = res.name || "Account •••• " + recipient.slice(-4);
+    var acctFromName = acctName(from);
+    var acctFromNum = "•••• " + String(account[from === "checking" ? "acctCheck" : "acctSave"]).slice(-4);
     if (account) {
-      emailJobs.push(sendTxnEmail(account.email, account.name, "Evervault · Transfer sent", "You sent " + money(amount) + " to " + (res.name || "Account •••• " + recipient.slice(-4)) + "."));
+      emailJobs.push(sendTxnEmail(account.email, account.name, {
+        subject: "Evervault · Transfer Sent",
+        message: "Your transfer has been completed successfully.",
+        txn_type: "Transfer Sent",
+        amount: money(amount),
+        recipient_name: recipDisplayName,
+        recipient_account: "•••• " + recipient.slice(-4),
+        sender_name: account.name,
+        sender_account: acctFromName + " " + acctFromNum,
+        txn_id: txnIdVal,
+        txn_date: txnTime,
+        balance_after: money(res.newBal),
+        from_account: acctFromName,
+        from_account_num: acctFromNum
+      }));
       if (resolvedR && resolvedR.uid) {
         emailJobs.push(db.collection("users").doc(resolvedR.uid).get().then(function (ds) {
           if (ds.exists) {
             var rd = ds.data();
-            if (rd.email) return sendTxnEmail(rd.email, rd.name, "Evervault · Transfer received", "You received " + money(amount) + " from " + account.name + ".");
+            if (rd.email) return sendTxnEmail(rd.email, rd.name, {
+              subject: "Evervault · Transfer Received",
+              message: "You have received a transfer.",
+              txn_type: "Transfer Received",
+              amount: money(amount),
+              sender_name: account.name,
+              sender_account: acctFromName + " " + acctFromNum,
+              recipient_name: rd.name,
+              recipient_account: "•••• " + String(rd.acctSave || rd.acctCheck || "").slice(-4),
+              txn_id: txnIdVal,
+              txn_date: txnTime,
+              balance_after: money(res.newBal)
+            });
           }
           return false;
         }).catch(function () { return false; }));
@@ -648,7 +675,18 @@ $("internalForm").addEventListener("submit", function (e) {
     $("intAmount").value = "";
     errorEl.textContent = "";
     if (account) {
-      sendTxnEmail(account.email, account.name, "Evervault · Transfer completed", "You moved " + money(amount) + " from " + acctName(from) + " to " + acctName(to) + ".");
+      sendTxnEmail(account.email, account.name, {
+        subject: "Evervault · Internal Transfer Completed",
+        message: "Your internal transfer has been completed successfully.",
+        txn_type: "Internal Transfer",
+        amount: money(amount),
+        from_account: acctName(from),
+        to_account: acctName(to),
+        txn_id: txnId(),
+        txn_date: fmtDateTime(Date.now()),
+        sender_name: account.name,
+        balance_after: ""
+      });
     }
   }).catch(function (err) {
     $("processingOverlay").classList.add("hidden");
