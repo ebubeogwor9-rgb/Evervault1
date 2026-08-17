@@ -509,18 +509,53 @@ app.post('/api/send-email', function (req, res) {
   var toName = String(b.to_name || 'User').trim();
   var subject = String(b.subject || 'Evervault Notification').trim();
   var message = String(b.message || '').trim();
+  var txnType = String(b.txn_type || '').trim();
+  var amount = String(b.amount || '').trim();
+  var txnId = String(b.txn_id || '').trim();
+  var txnDate = String(b.txn_date || '').trim();
+  var senderName = String(b.sender_name || '').trim();
+  var senderAccount = String(b.sender_account || '').trim();
+  var recipientName = String(b.recipient_name || '').trim();
+  var recipientAccount = String(b.recipient_account || '').trim();
+  var fromAccount = String(b.from_account || '').trim();
+  var toAccount = String(b.to_account || '').trim();
   if (!toEmail) return res.status(400).json({ error: 'to_email is required.' });
   if (!SMTP_EMAIL || !SMTP_PASS) return res.status(500).json({ error: 'SMTP not configured on the server.' });
   var transporter = nodemailer.createTransport({
     service: 'gmail',
-    auth: { user: SMTP_EMAIL, pass: SMTP_PASS }
+    auth: { user: SMTP_EMAIL, pass: SMTP_PASS },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000
   });
+  var rows = '';
+  rows += '<tr style="border-bottom:1px solid #eee;"><td style="padding:12px 0;color:#666;font-size:14px;">Amount</td><td style="padding:12px 0;text-align:right;font-weight:bold;font-size:20px;color:#1a1a1a;">' + escHtml(amount) + '</td></tr>';
+  if (txnId) rows += '<tr style="border-bottom:1px solid #eee;"><td style="padding:12px 0;color:#666;font-size:14px;">Transaction ID</td><td style="padding:12px 0;text-align:right;font-family:Consolas,monospace;font-size:13px;color:#1a1a1a;">' + escHtml(txnId) + '</td></tr>';
+  if (txnDate) rows += '<tr style="border-bottom:1px solid #eee;"><td style="padding:12px 0;color:#666;font-size:14px;">Date &amp; Time</td><td style="padding:12px 0;text-align:right;font-size:14px;color:#1a1a1a;">' + escHtml(txnDate) + '</td></tr>';
+  if (senderName) rows += '<tr style="border-bottom:1px solid #eee;"><td style="padding:12px 0;color:#666;font-size:14px;">From</td><td style="padding:12px 0;text-align:right;font-size:14px;color:#1a1a1a;">' + escHtml(senderName) + ' ' + escHtml(senderAccount) + '</td></tr>';
+  if (recipientName) rows += '<tr style="border-bottom:1px solid #eee;"><td style="padding:12px 0;color:#666;font-size:14px;">To</td><td style="padding:12px 0;text-align:right;font-size:14px;color:#1a1a1a;">' + escHtml(recipientName) + ' ' + escHtml(recipientAccount) + '</td></tr>';
+  if (fromAccount) rows += '<tr style="border-bottom:1px solid #eee;"><td style="padding:12px 0;color:#666;font-size:14px;">From Account</td><td style="padding:12px 0;text-align:right;font-size:14px;color:#1a1a1a;">' + escHtml(fromAccount) + '</td></tr>';
+  if (toAccount) rows += '<tr><td style="padding:12px 0;color:#666;font-size:14px;">To Account</td><td style="padding:12px 0;text-align:right;font-size:14px;color:#1a1a1a;">' + escHtml(toAccount) + '</td></tr>';
+  var html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden;border:1px solid #e0e0e0;">'
+    + '<div style="background:linear-gradient(135deg,#0f6bff,#0a4fbf);padding:24px 30px;text-align:center;">'
+    + '<div style="font-size:22px;font-weight:bold;color:#fff;letter-spacing:1px;">EVERVAULT</div>'
+    + '<div style="font-size:11px;color:rgba(255,255,255,.65);margin-top:4px;letter-spacing:2px;">SECURE BANKING</div>'
+    + '</div>'
+    + '<div style="padding:30px;">'
+    + '<h2 style="margin:0 0 6px;color:#1a1a1a;font-size:18px;">' + escHtml(txnType || subject) + '</h2>'
+    + '<p style="margin:0 0 24px;color:#666;font-size:14px;">Hello ' + escHtml(toName) + ', ' + escHtml(message) + '</p>'
+    + '<table width="100%" style="border-collapse:collapse;margin-bottom:24px;">' + rows + '</table>'
+    + '<div style="background:#e6f7ee;text-align:center;padding:14px;border-radius:8px;color:#0b7a3b;font-weight:bold;font-size:14px;">&#10003; Transaction Completed Successfully</div>'
+    + '</div>'
+    + '<div style="background:#f7f8fa;padding:16px 30px;text-align:center;font-size:11px;color:#999;border-top:1px solid #eee;">'
+    + 'This is an automated notification from Evervault Secure Banking. Do not reply to this email.<br>'
+    + 'If you did not authorize this transaction, contact support immediately at +1 443 898 1098.'
+    + '</div></div>';
   transporter.sendMail({
     from: '"Evervault" <' + SMTP_EMAIL + '>',
     to: toEmail,
     subject: subject,
-    text: 'Hello ' + toName + ',\n\n' + message + '\n\n— Evervault Security Team',
-    html: '<p>Hello ' + escHtml(toName) + ',</p><p>' + escHtml(message) + '</p><p>— Evervault Security Team</p>'
+    html: html
   }).then(function (info) {
     res.json({ ok: true, messageId: info.messageId });
   }).catch(function (err) {

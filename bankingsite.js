@@ -92,9 +92,15 @@ function friendlyErr(err) {
 }
 
 function sendTxnEmail(toEmail, toName, params) {
-  if (!toEmail || typeof emailjs === 'undefined') return Promise.resolve(false);
-  var tplParams = Object.assign({ to_email: toEmail, to_name: toName }, params);
-  return emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, tplParams, EMAILJS_PUBLIC).then(function () {
+  if (!toEmail) return Promise.resolve(false);
+  var apiBase = location.origin;
+  var body = Object.assign({ to_email: toEmail, to_name: toName }, params);
+  return fetch(apiBase + "/api/send-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  }).then(function (res) {
+    if (!res.ok) throw new Error("Email endpoint status " + res.status);
     return true;
   }).catch(function (err) {
     console.error("Evervault email send failed:", err);
