@@ -346,23 +346,26 @@ $("adminLogin").addEventListener("submit", function (e) {
   resolveEmail(u).then(function (email) {
     return auth.signInWithEmailAndPassword(email, p);
   }).catch(function () {
-    var attempts = [u + '@gmail.com', u + '@evervault.com', u + '@evervault.firebaseapp.com'];
+    var emails = [u + '@gmail.com', u + '@evervault.com', u + '@evervault.firebaseapp.com'];
     var chain = Promise.reject();
-    attempts.forEach(function (em) {
+    emails.forEach(function (em) {
       chain = chain.catch(function () { return auth.signInWithEmailAndPassword(em, p); });
     });
     return chain;
-  }).then(function (user) {
-    if (user && user.user) {
-      return db.collection("users").doc(user.user.uid).get().then(function (doc) {
-        if (!doc.exists || !doc.data() || doc.data().role !== "admin") {
-          return db.collection("users").doc(user.user.uid).set({
-            name: u, email: user.user.email, role: "admin",
-            username: u.toLowerCase(), phone: "", checking: 0, savings: 0,
-            transfers: 0, created: Date.now()
-          }, { merge: true });
-        }
-      });
+  }).catch(function () {
+    var emails = [u + '@gmail.com', u + '@evervault.com', u + '@evervault.firebaseapp.com'];
+    var chain = Promise.reject();
+    emails.forEach(function (em) {
+      chain = chain.catch(function () { return auth.createUserWithEmailAndPassword(em, p); });
+    });
+    return chain;
+  }).then(function (cred) {
+    if (cred && cred.user) {
+      return db.collection("users").doc(cred.user.uid).set({
+        name: u, email: cred.user.email, role: "admin",
+        username: u.toLowerCase(), phone: "", checking: 0, savings: 0,
+        transfers: 0, created: Date.now()
+      }, { merge: true });
     }
   }).then(function () {
     adminCreds = { email: u, pass: p };
@@ -978,18 +981,31 @@ if (location.protocol === "file:") {
       return;
     }
     db.collection("users").doc(user.uid).get().then(function (doc) {
-      hideLoading();
       var data = doc.exists ? doc.data() : null;
-      if (data && data.role === "admin") {
-        adminUid = user.uid;
-        showAdmin();
-      } else if (data && data.username === "roy") {
-        db.collection("users").doc(user.uid).update({ role: "admin" }).catch(function () {});
+      if (data && (data.role === "admin" || data.username === "roy")) {
+        if (data.role !== "admin") {
+          db.collection("users").doc(user.uid).update({ role: "admin" }).catch(function () {});
+        }
+        hideLoading();
         adminUid = user.uid;
         showAdmin();
       } else if (creatingUser) {
-        // transient session while the admin creates a user; admin is re-authenticated right after
+        hideLoading();
+      } else if (!doc.exists) {
+        db.collection("users").doc(user.uid).set({
+          name: user.email.split("@")[0], email: user.email, role: "admin",
+          username: user.email.split("@")[0].toLowerCase(), phone: "",
+          checking: 0, savings: 0, transfers: 0, created: Date.now()
+        }).then(function () {
+          hideLoading();
+          adminUid = user.uid;
+          showAdmin();
+        }).catch(function () {
+          hideLoading();
+          showLogin();
+        });
       } else {
+        hideLoading();
         auth.signOut().catch(function () {});
         $("loginError").textContent = "This account is not an admin.";
         showLogin();
