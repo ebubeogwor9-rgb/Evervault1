@@ -358,11 +358,11 @@ function findRecipient(num) {
   var q3 = db.collection("recipients").doc(num).get();
   return Promise.all([q1, q2, q3]).then(function (rs) {
     var a = rs[0].docs[0];
-    if (a) return { uid: a.id, field: "acctCheck", name: a.data().name };
+    if (a) return { uid: a.id, field: "acctCheck", balField: "checking", name: a.data().name };
     var b = rs[1].docs[0];
-    if (b) return { uid: b.id, field: "acctSave", name: b.data().name };
-    if (rs[2].exists) return { uid: null, field: null, name: rs[2].data().name };
-    return { uid: null, field: null, name: null };
+    if (b) return { uid: b.id, field: "acctSave", balField: "savings", name: b.data().name };
+    if (rs[2].exists) return { uid: null, field: null, balField: null, name: rs[2].data().name };
+    return { uid: null, field: null, balField: null, name: null };
   });
 }
 
@@ -545,7 +545,7 @@ $("transferForm").addEventListener("submit", function (e) {
         var rs = snaps[1];
         if (!rs.exists) throw new Error("Recipient account no longer exists.");
         var rd = rs.data();
-        var rNew = round2(Number(rd[r.field] || 0) + amount);
+        var rNew = round2(Number(rd[r.balField] || 0) + amount);
         var fromField = r.field === "acctCheck" ? "acctCheck" : "acctSave";
         var rentry = {
           id: uid(),
@@ -555,7 +555,7 @@ $("transferForm").addEventListener("submit", function (e) {
           amt: amount,
           bal: rNew
         };
-        tr.update(recipRef, { [r.field]: rNew });
+        tr.update(recipRef, { [r.balField]: rNew });
         tr.set(recipRef.collection("history").doc(rentry.id), rentry);
         return { newBal: newBal, name: rd.name };
       });
