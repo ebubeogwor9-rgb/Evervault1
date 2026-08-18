@@ -205,6 +205,17 @@ body.dark .chat-input-area input { background: #232b3b; border-color: #3a4256; c
 .chat-welcome strong { display: block; font-size: 15px; color: #1a1a1a; margin-bottom: 4px; }
 body.dark .chat-welcome strong { color: #e6eaf2; }
 body.dark .chat-welcome { color: #8a93a8; }
+
+.deposit-upload { border: 2px dashed #cbd5e0; border-radius: 10px; padding: 24px; text-align: center; cursor: pointer; position: relative; margin-bottom: 16px; transition: border-color .2s; min-height: 120px; display: flex; align-items: center; justify-content: center; }
+.deposit-upload:hover { border-color: #0f6bff; }
+body.dark .deposit-upload { border-color: #3a4256; }
+body.dark .deposit-upload:hover { border-color: #4d8dff; }
+.deposit-file-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.deposit-placeholder { display: flex; flex-direction: column; align-items: center; gap: 8px; color: #8a9aaa; font-size: 13px; pointer-events: none; }
+.deposit-placeholder svg { opacity: .5; }
+.deposit-preview { max-width: 100%; max-height: 160px; border-radius: 8px; object-fit: contain; }
+.deposit-preview.hidden { display: none; }
+.deposit-history { margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -254,6 +265,7 @@ body.dark .chat-welcome { color: #8a93a8; }
   <div class="nav">
     <button class="nav-btn active" data-page="home">Home</button>
     <button class="nav-btn" data-page="transfer">Transfer</button>
+    <button class="nav-btn" data-page="deposit">Deposit</button>
     <button class="nav-btn" data-page="card">Card</button>
     <button class="nav-btn" data-page="account">Account</button>
     <button class="nav-btn" data-page="profile">Profile</button>
@@ -349,6 +361,50 @@ body.dark .chat-welcome { color: #8a93a8; }
         <button type="submit">Transfer</button>
       </form>
       <div class="error" id="intError"></div>
+    </div>
+  </div>
+
+  <div id="page-deposit" class="hidden">
+    <div id="depositSuccess" class="success hidden">Check deposit submitted successfully. Funds will be available shortly.</div>
+    <form id="depositForm">
+      <h2 style="font-size:16px; margin-bottom:6px;">Mobile Check Deposit</h2>
+      <p class="sub">Deposit a check by entering the details and uploading a photo.</p>
+      <label for="depositAccount">Deposit To</label>
+      <select id="depositAccount">
+        <option value="checking">Checking</option>
+        <option value="savings">Savings</option>
+      </select>
+      <label for="depositAmount">Amount ($)</label>
+      <input type="number" id="depositAmount" placeholder="0.00" min="0.01" step="0.01" required>
+      <label for="depositCheckNum">Check Number</label>
+      <input type="text" id="depositCheckNum" placeholder="e.g. 1001" required>
+      <label for="depositPayer">Payer / From</label>
+      <input type="text" id="depositPayer" placeholder="e.g. John Smith" required>
+      <label>Front of Check</label>
+      <div class="deposit-upload" id="depositFrontWrap">
+        <input type="file" id="depositFront" accept="image/*" capture="environment" class="deposit-file-input">
+        <div class="deposit-placeholder" id="depositFrontPlaceholder">
+          <svg viewBox="0 0 24 24" width="36" height="36" fill="#8a9aaa"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+          <span>Tap to take photo or upload</span>
+        </div>
+        <img id="depositFrontPreview" class="deposit-preview hidden">
+      </div>
+      <label>Back of Check (optional)</label>
+      <div class="deposit-upload" id="depositBackWrap">
+        <input type="file" id="depositBack" accept="image/*" capture="environment" class="deposit-file-input">
+        <div class="deposit-placeholder" id="depositBackPlaceholder">
+          <svg viewBox="0 0 24 24" width="36" height="36" fill="#8a9aaa"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+          <span>Tap to take photo or upload</span>
+        </div>
+        <img id="depositBackPreview" class="deposit-preview hidden">
+      </div>
+      <button type="submit" id="depositBtn">Submit Deposit</button>
+    </form>
+    <div class="error" id="depositError"></div>
+    <hr class="divider">
+    <div class="deposit-history">
+      <h3 style="font-size:15px; margin-bottom:10px;">Recent Deposits</h3>
+      <div id="depositHistoryList" class="history-list"></div>
     </div>
   </div>
 

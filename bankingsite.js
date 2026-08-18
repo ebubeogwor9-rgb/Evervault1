@@ -118,7 +118,7 @@ function showSignup() {
   $("signupError").textContent = "";
 }
 
-var PAGES = ["home", "transfer", "card", "account", "profile"];
+var PAGES = ["home", "transfer", "deposit", "card", "account", "profile"];
 
 function showPage(page) {
   for (var i = 0; i < PAGES.length; i++) {
@@ -128,6 +128,7 @@ function showPage(page) {
   for (var j = 0; j < btns.length; j++) {
     btns[j].classList.toggle("active", btns[j].getAttribute("data-page") === page);
   }
+  if (page === "deposit") renderDepositHistory();
 }
 
 function renderHistory(acc) {
@@ -931,3 +932,140 @@ function fmtTime(ts) {
   h = h % 12 || 12;
   return h + ":" + m + " " + ap;
 }
+
+function setupDeposit() {
+  var frontInput = $("depositFront");
+  var backInput = $("depositBack");
+  if (frontInput) frontInput.addEventListener("change", function () {
+    if (this.files && this.files[0]) {
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        $("depositFrontPreview").src = e.target.result;
+        $("depositFrontPreview").classList.remove("hidden");
+        $("depositFrontPlaceholder").style.display = "none";
+      };
+      reader.readAsDataURL(this.files[0]);
+    }
+  });
+  if (backInput) backInput.addEventListener("change", function () {
+    if (this.files && this.files[0]) {
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        $("depositBackPreview").src = e.target.result;
+        $("depositBackPreview").classList.remove("hidden");
+        $("depositBackPlaceholder").style.display = "none";
+      };
+      reader.readAsDataURL(this.files[0]);
+    }
+  });
+
+  var depositForm = $("depositForm");
+  if (depositForm) depositForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (!auth.currentUser || !account) return;
+    var acct = $("depositAccount").value;
+    var amount = parseFloat($("depositAmount").value);
+    var checkNum = $("depositCheckNum").value.trim();
+    var payer = $("depositPayer").value.trim();
+    var errorEl = $("depositError");
+    if (isNaN(amount) || amount <= 0) { errorEl.textContent = "Enter a valid amount."; return; }
+    if (!checkNum) { errorEl.textContent = "Enter the check number."; return; }
+    if (!payer) { errorEl.textContent = "Enter the payer name."; return; }
+    var frontFile = $("depositFront").files[0];
+    if (!frontFile) { errorEl.textContent = "Please upload a photo of the front of the check."; return; }
+    $("processingOverlay").classList.remove("hidden");
+    var reader = new FileReader();
+    reader.onload = function (ev) {
+      var frontData = ev.target.result;
+      var backFile = $("depositBack").files[0];
+      if (backFile) {
+        var reader2 = new FileReader();
+        reader2.onload = function (ev2) {
+          processDeposit(acct, amount, checkNum, payer, frontData, ev2.target.result);
+        };
+        reader2.readAsDataURL(backFile);
+      } else {
+        processDeposit(acct, amount, checkNum, payer, frontData, null);
+      }
+    };
+    reader.readAsDataURL(frontFile);
+  });
+}
+
+function processDeposit(acct, amount, checkNum, payer, frontImg, backImg) {
+  var selfRef = db.collection("users").doc(auth.currentUser.uid);
+  db.runTransaction(function (tr) {
+    return tr.get(selfRef).then(function (snap) {
+      if (!snap.exists) throw new Error("Account not found.");
+      var data = snap.data();
+      var bal = Number(data[acct] || 0);
+      var newBal = round2(bal + amount);
+      var ts = Date.now();
+      var entry = {
+        id: uid(),
+        ts: ts,
+        desc: "Mobile deposit · Check #" + checkNum + " from " + payer,
+        type: "credit",
+        amt: amount,
+        bal: newBal
+      };
+      tr.update(selfRef, { [acct]: newBal });
+      tr.set(selfRef.collection("history").doc(entry.id), entry);
+      tr.set(selfRef.collection("deposits").doc(entry.id), {
+        id: entry.id,
+        ts: ts,
+        amount: amount,
+        checkNum: checkNum,
+        payer: payer,
+        account: acct,
+        frontImg: frontImg,
+        backImg: backImg || null,
+        status: "completed"
+      });
+      return { newBal: newBal };
+    });
+  }).then(function (res) {
+    $("processingOverlay").classList.add("hidden");
+    $("depositError").textContent = "";
+    $("depositSuccess").classList.remove("hidden");
+    $("depositForm").reset();
+    $("depositFrontPreview").classList.add("hidden");
+    $("depositBackPreview").classList.add("hidden");
+    $("depositFrontPlaceholder").style.display = "";
+    $("depositBackPlaceholder").style.display = "";
+    renderDepositHistory();
+    setTimeout(function () { $("depositSuccess").classList.add("hidden"); }, 5000);
+  }).catch(function (err) {
+    $("processingOverlay").classList.add("hidden");
+    $("depositError").textContent = err.message;
+  });
+}
+
+function renderDepositHistory() {
+  if (!auth.currentUser) return;
+  var box = $("depositHistoryList");
+  if (!box) return;
+  db.collection("users").doc(auth.currentUser.uid).collection("deposits").orderBy("ts", "desc").limit(10).get().then(function (snap) {
+    if (snap.empty) { box.innerHTML = '<div class="history-empty">No deposits yet.</div>'; return; }
+    var html = "";
+    snap.forEach(function (d) {
+      var dep = d.data();
+      var dt = new Date(dep.ts);
+      var dateStr = (dt.getMonth() + 1) + "/" + dt.getDate() + "/" + dt.getFullYear();
+      var statusColor = dep.status === "completed" ? "#0b7a3b" : dep.status === "pending" ? "#b8860b" : "#a01c1c";
+      html += '<div class="history-row">'
+        + '<div class="left"><div class="desc">Check #' + esc(dep.checkNum) + ' · ' + esc(dep.payer) + '</div>'
+        + '<div class="date">' + dateStr + ' · ' + esc(dep.account) + '</div></div>'
+        + '<div class="right"><div class="amt credit">+' + money(dep.amount) + '</div>'
+        + '<div class="bal" style="color:' + statusColor + '">' + esc(dep.status) + '</div></div></div>';
+    });
+    box.innerHTML = html;
+  }).catch(function () {
+    box.innerHTML = '<div class="history-empty">Could not load deposits.</div>';
+  });
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  setupDeposit();
+});
+if (document.readyState !== "loading") setupDeposit();

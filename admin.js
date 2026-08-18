@@ -183,6 +183,12 @@ function openEditor(uid) {
   $("eCardNum").value = u.cardNum || "";
   $("eCardExp").value = u.cardExp || "";
   $("eCardCvv").value = u.cardCvv || "";
+  if (u.created) {
+    var cd = new Date(u.created);
+    $("eCreated").value = cd.getFullYear() + "-" + ("0" + (cd.getMonth() + 1)).slice(-2) + "-" + ("0" + cd.getDate()).slice(-2);
+  } else {
+    $("eCreated").value = "";
+  }
   $("editError").textContent = "";
   $("editOk").classList.add("hidden");
   $("hError").textContent = "";
@@ -383,6 +389,10 @@ $("saveBtn").addEventListener("click", function () {
     cardExp: $("eCardExp").value.trim() || u.cardExp,
     cardCvv: $("eCardCvv").value.trim() || u.cardCvv
   };
+  var createdVal = $("eCreated").value;
+  if (createdVal) {
+    upd.created = new Date(createdVal + "T12:00:00").getTime();
+  }
   showLoading("Saving", "Saving " + name + "...");
   if (newUname !== u.username) {
     db.collection("users").where("username", "==", newUname).get().then(function (snap) {
