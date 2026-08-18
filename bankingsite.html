@@ -166,6 +166,45 @@ body.dark .theme-btn.active { border-color: #0f6bff; color: #4d8dff; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .overlay-title { font-size: 16px; font-weight: 700; color: #1f2d3d; }
 .overlay-sub { font-size: 13px; color: #5b6b7b; margin-top: 4px; }
+
+.chat-bubble { position: fixed; bottom: 24px; right: 24px; width: 56px; height: 56px; border-radius: 50%; background: #0f6bff; color: #fff; border: none; cursor: pointer; box-shadow: 0 4px 16px rgba(15,107,255,.4); display: flex; align-items: center; justify-content: center; z-index: 200; transition: transform .2s; margin-top: 0; }
+.chat-bubble:hover { transform: scale(1.08); }
+.chat-bubble svg { width: 26px; height: 26px; fill: #fff; }
+
+.chat-panel { position: fixed; bottom: 90px; right: 24px; width: 370px; max-width: 92vw; height: 480px; max-height: 70vh; background: #fff; border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,.18); display: flex; flex-direction: column; z-index: 201; overflow: hidden; }
+.chat-panel.hidden { display: none; }
+body.dark .chat-panel { background: #1b2230; }
+
+.chat-header { background: linear-gradient(135deg, #0f6bff, #0a4fbf); color: #fff; padding: 16px 18px; display: flex; justify-content: space-between; align-items: center; }
+.chat-header-info { display: flex; align-items: center; gap: 10px; }
+.chat-header-info .avatar { width: 36px; height: 36px; background: rgba(255,255,255,.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; }
+.chat-header-info .name { font-weight: 600; font-size: 14px; }
+.chat-header-info .status { font-size: 11px; opacity: .8; }
+.chat-close { background: none; border: none; color: #fff; cursor: pointer; font-size: 20px; padding: 4px 8px; margin-top: 0; }
+
+.chat-messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; background: #f7f8fa; }
+body.dark .chat-messages { background: #10141c; }
+
+.chat-msg { max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.5; word-wrap: break-word; }
+.chat-msg.user { align-self: flex-end; background: #0f6bff; color: #fff; border-bottom-right-radius: 4px; }
+.chat-msg.admin { align-self: flex-start; background: #fff; color: #1a1a1a; border-bottom-left-radius: 4px; border: 1px solid #e2e8f0; }
+body.dark .chat-msg.admin { background: #232b3b; color: #e6eaf2; border-color: #3a4256; }
+.chat-msg .msg-time { font-size: 10px; opacity: .6; margin-top: 4px; display: block; }
+.chat-msg.system { align-self: center; background: none; color: #8a9aaa; font-size: 11px; text-align: center; max-width: 100%; padding: 4px; }
+
+.chat-input-area { display: flex; gap: 8px; padding: 12px; border-top: 1px solid #e2e8f0; background: #fff; }
+body.dark .chat-input-area { background: #1b2230; border-color: #3a4256; }
+.chat-input-area input { flex: 1; padding: 10px 14px; border: 1px solid #cbd5e0; border-radius: 20px; font-size: 13px; background: #f7f8fa; outline: none; }
+.chat-input-area input:focus { border-color: #0f6bff; }
+body.dark .chat-input-area input { background: #232b3b; border-color: #3a4256; color: #e6eaf2; }
+.chat-send { width: 40px; height: 40px; border-radius: 50%; background: #0f6bff; color: #fff; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; margin-top: 0; }
+.chat-send:hover { background: #0a58d0; }
+.chat-send:disabled { background: #a8b6c4; cursor: not-allowed; }
+
+.chat-welcome { text-align: center; padding: 20px 14px; color: #5b6b7b; font-size: 13px; }
+.chat-welcome strong { display: block; font-size: 15px; color: #1a1a1a; margin-bottom: 4px; }
+body.dark .chat-welcome strong { color: #e6eaf2; }
+body.dark .chat-welcome { color: #8a93a8; }
 </style>
 </head>
 <body>
@@ -433,6 +472,35 @@ body.dark .theme-btn.active { border-color: #0f6bff; color: #4d8dff; }
     <div class="spinner"></div>
     <div class="overlay-title" id="loadTitle">Loading</div>
     <div class="overlay-sub" id="loadSub">Please wait...</div>
+  </div>
+</div>
+
+<button class="chat-bubble hidden" id="chatBubble" title="Chat with us">
+  <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/></svg>
+</button>
+
+<div class="chat-panel hidden" id="chatPanel">
+  <div class="chat-header">
+    <div class="chat-header-info">
+      <div class="avatar">EV</div>
+      <div>
+        <div class="name">Evervault Support</div>
+        <div class="status" id="chatStatus">Online</div>
+      </div>
+    </div>
+    <button class="chat-close" id="chatClose">&times;</button>
+  </div>
+  <div class="chat-messages" id="chatMessages">
+    <div class="chat-welcome">
+      <strong>Welcome to Evervault Support</strong>
+      How can we help you today? Send us a message and our team will respond shortly.
+    </div>
+  </div>
+  <div class="chat-input-area">
+    <input type="text" id="chatInput" placeholder="Type your message..." maxlength="1000">
+    <button class="chat-send" id="chatSend">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="#fff"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
   </div>
 </div>
 

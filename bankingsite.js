@@ -847,9 +847,87 @@ if (location.protocol === "file:") {
   firebase.auth().onAuthStateChanged(function (user) {
     if (user) {
       watchUser();
+      initChat(user);
     } else {
       cleanup();
       showLogin();
+      closeChat();
     }
   });
+}
+
+var chatUnsub = null;
+var chatOpen = false;
+
+function initChat(user) {
+  var bubble = $("chatBubble");
+  if (!bubble) return;
+  bubble.classList.remove("hidden");
+  bubble.onclick = toggleChat;
+  $("chatClose").onclick = closeChat;
+  $("chatSend").onclick = sendChatMsg;
+  $("chatInput").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") sendChatMsg();
+  });
+}
+
+function toggleChat() {
+  chatOpen = !chatOpen;
+  $("chatPanel").classList.toggle("hidden", !chatOpen);
+  if (chatOpen) {
+    $("chatInput").focus();
+    listenChat();
+  }
+}
+
+function closeChat() {
+  chatOpen = false;
+  $("chatPanel").classList.add("hidden");
+  if (chatUnsub) { chatUnsub(); chatUnsub = null; }
+}
+
+function listenChat() {
+  if (chatUnsub) return;
+  var uid = auth.currentUser.uid;
+  var chatRef = db.collection("chats").doc(uid);
+  chatRef.set({ userId: uid, userName: account.name, userEmail: account.email, createdAt: firebase.firestore.FieldValue.serverTimestamp(), status: "open" }, { merge: true }).catch(function () {});
+  chatUnsub = chatRef.collection("messages").orderBy("ts").onSnapshot(function (snap) {
+    var box = $("chatMessages");
+    var wasBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+    box.innerHTML = '<div class="chat-welcome"><strong>Evervault Support</strong>How can we help you today?</div>';
+    snap.forEach(function (d) {
+      var m = d.data();
+      var div = document.createElement("div");
+      div.className = "chat-msg " + (m.sender === "admin" ? "admin" : "user");
+      div.innerHTML = esc(m.text) + '<span class="msg-time">' + fmtTime(m.ts || Date.now()) + '</span>';
+      box.appendChild(div);
+    });
+    if (wasBottom) box.scrollTop = box.scrollHeight;
+  });
+}
+
+function sendChatMsg() {
+  var input = $("chatInput");
+  var text = input.value.trim();
+  if (!text || !auth.currentUser) return;
+  input.value = "";
+  var uid = auth.currentUser.uid;
+  var chatRef = db.collection("chats").doc(uid);
+  chatRef.collection("messages").add({
+    sender: "user",
+    senderName: account.name,
+    text: text,
+    ts: Date.now()
+  }).then(function () {
+    return chatRef.set({ lastMessage: text, lastUpdate: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+  }).catch(function () {});
+}
+
+function fmtTime(ts) {
+  var d = new Date(ts);
+  var h = d.getHours();
+  var m = ("0" + d.getMinutes()).slice(-2);
+  var ap = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return h + ":" + m + " " + ap;
 }

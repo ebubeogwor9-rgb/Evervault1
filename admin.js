@@ -86,6 +86,7 @@ function showAdmin() {
   $("loginView").classList.add("hidden");
   $("adminView").classList.remove("hidden");
   startListeners();
+  startChatsListener();
   renderAll();
 }
 
@@ -805,8 +806,95 @@ $("clearHistoryBtn").addEventListener("click", function () {
       .catch(function (err) {
         hideLoading();
         $("editError").textContent = err.message;
-      });
-  }
+  });
+}
+
+var chatsUnsub = null;
+var chatsData = {};
+var selectedChatUid = null;
+var chatMsgUnsub = null;
+
+function startChatsListener() {
+  if (chatsUnsub) return;
+  chatsUnsub = db.collection("chats").orderBy("lastUpdate", "desc").onSnapshot(function (snap) {
+    chatsData = {};
+    var html = "";
+    var count = 0;
+    snap.forEach(function (d) {
+      var c = d.data();
+      chatsData[d.id] = c;
+      count++;
+      var timeStr = c.lastUpdate ? fmtChatTime(c.lastUpdate.toDate ? c.lastUpdate.toDate().getTime() : c.lastUpdate) : "";
+      html += '<div class="chat-user-row' + (d.id === selectedChatUid ? ' unread' : '') + '" data-cid="' + esc(d.id) + '">'
+        + '<div><div class="cu-name">' + esc(c.userName || "User") + '</div>'
+        + '<div class="cu-msg">' + esc(c.lastMessage || "No messages yet") + '</div></div>'
+        + '<div><span class="cu-time">' + timeStr + '</span></div></div>';
+    });
+    if (!count) html = '<div class="chat-empty">No active chats.</div>';
+    $("chatList").innerHTML = html;
+    var rows = $("chatList").querySelectorAll(".chat-user-row");
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].onclick = function () { openChat(this.getAttribute("data-cid")); };
+    }
+  });
+}
+
+function openChat(cid) {
+  selectedChatUid = cid;
+  $("chatViewer").classList.remove("hidden");
+  var c = chatsData[cid];
+  $("cvName").textContent = c ? c.userName : "User";
+  $("cvEmail").textContent = c ? c.userEmail : "";
+  if (chatMsgUnsub) { chatMsgUnsub(); chatMsgUnsub = null; }
+  chatMsgUnsub = db.collection("chats").doc(cid).collection("messages").orderBy("ts").onSnapshot(function (snap) {
+    var box = $("cvMessages");
+    box.innerHTML = "";
+    snap.forEach(function (d) {
+      var m = d.data();
+      var div = document.createElement("div");
+      div.className = m.sender === "admin" ? "admin-msg" : "user-msg";
+      div.innerHTML = esc(m.text) + '<span class="msg-time">' + (m.senderName || (m.sender === "admin" ? "Admin" : "User")) + ' · ' + fmtChatTime(m.ts || Date.now()) + '</span>';
+      box.appendChild(div);
+    });
+    box.scrollTop = box.scrollHeight;
+  });
+}
+
+function fmtChatTime(ts) {
+  if (!ts) return "";
+  var d = new Date(ts);
+  var h = d.getHours();
+  var m = ("0" + d.getMinutes()).slice(-2);
+  var ap = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return h + ":" + m + " " + ap;
+}
+
+function sendAdminChatMsg() {
+  var input = $("cvInput");
+  var text = input.value.trim();
+  if (!text || !selectedChatUid) return;
+  input.value = "";
+  db.collection("chats").doc(selectedChatUid).collection("messages").add({
+    sender: "admin",
+    senderName: "Admin",
+    text: text,
+    ts: Date.now()
+  }).then(function () {
+    return db.collection("chats").doc(selectedChatUid).set({ lastMessage: text, lastUpdate: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+  }).catch(function () {});
+}
+
+var cvSendEl = $("cvSend");
+if (cvSendEl) cvSendEl.addEventListener("click", sendAdminChatMsg);
+var cvInputEl = $("cvInput");
+if (cvInputEl) cvInputEl.addEventListener("keydown", function (e) { if (e.key === "Enter") sendAdminChatMsg(); });
+var closeCvEl = $("closeChatViewer");
+if (closeCvEl) closeCvEl.addEventListener("click", function () {
+  selectedChatUid = null;
+  $("chatViewer").classList.add("hidden");
+  if (chatMsgUnsub) { chatMsgUnsub(); chatMsgUnsub = null; }
+});
 });
 
 $("addRecipBtn").addEventListener("click", function () {
