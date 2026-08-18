@@ -527,6 +527,24 @@ body.dark .ext-account-card .ext-info .ext-nick { color: #4d8dff; }
     <div class="error" id="pwError"></div>
     <div id="pwSuccess" class="success hidden">Password updated successfully.</div>
     <hr class="divider">
+    <h2 style="font-size:16px;">Transaction PIN</h2>
+    <p class="sub">Set a 4-digit PIN to authorize transfers and sensitive actions.</p>
+    <div id="pinStatus" class="profile-field">
+      <label>Current PIN Status</label>
+      <div class="value" id="pinStatusValue">Not set</div>
+    </div>
+    <form id="changePinForm">
+      <label for="currentPin">Current PIN (leave blank if not set)</label>
+      <input type="password" id="currentPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="****">
+      <label for="newPin">New 4-Digit PIN</label>
+      <input type="password" id="newPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="****" required>
+      <label for="confirmPin">Confirm New PIN</label>
+      <input type="password" id="confirmPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="****" required>
+      <button type="submit">Update PIN</button>
+    </form>
+    <div class="error" id="pinError"></div>
+    <div id="pinSuccess" class="success hidden">PIN updated successfully.</div>
+    <hr class="divider">
     <h2 style="font-size:16px;">Change Login Email</h2>
     <p class="sub">This changes the email you use to sign in.</p>
     <form id="changeEmailForm">
@@ -568,6 +586,17 @@ body.dark .ext-account-card .ext-info .ext-nick { color: #4d8dff; }
     <div class="spinner"></div>
     <div class="overlay-title" id="loadTitle">Loading</div>
     <div class="overlay-sub" id="loadSub">Please wait...</div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="pinOverlay">
+  <div class="overlay-card">
+    <div class="overlay-title" style="margin-bottom:6px;">Enter Your PIN</div>
+    <div class="overlay-sub" id="pinOverlaySub">Enter your 4-digit transaction PIN to continue.</div>
+    <input type="password" id="pinOverlayInput" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="****" style="width:140px;margin:16px auto;padding:12px;font-size:24px;text-align:center;letter-spacing:8px;border:2px solid #cbd5e0;border-radius:8px;outline:none;display:block;">
+    <div class="error" id="pinOverlayError" style="min-height:18px;"></div>
+    <button id="pinOverlaySubmit" style="width:100%;margin-top:8px;">Verify</button>
+    <button class="link-btn" id="pinOverlayCancel" style="margin-top:10px;">Cancel</button>
   </div>
 </div>
 

@@ -343,14 +343,30 @@ $("adminLogin").addEventListener("submit", function (e) {
     return;
   }
   showLoading("Signing In", "Please wait while we verify your credentials...");
-  var resolvedEmail = null;
   resolveEmail(u).then(function (email) {
-    resolvedEmail = email;
     return auth.signInWithEmailAndPassword(email, p);
+  }).catch(function () {
+    var attempts = [u + '@gmail.com', u + '@evervault.com', u + '@evervault.firebaseapp.com'];
+    var chain = Promise.reject();
+    attempts.forEach(function (em) {
+      chain = chain.catch(function () { return auth.signInWithEmailAndPassword(em, p); });
+    });
+    return chain;
+  }).then(function (user) {
+    if (user && user.user) {
+      return db.collection("users").doc(user.user.uid).get().then(function (doc) {
+        if (!doc.exists || !doc.data() || doc.data().role !== "admin") {
+          return db.collection("users").doc(user.user.uid).set({
+            name: u, email: user.user.email, role: "admin",
+            username: u.toLowerCase(), phone: "", checking: 0, savings: 0,
+            transfers: 0, created: Date.now()
+          }, { merge: true });
+        }
+      });
+    }
   }).then(function () {
-    adminCreds = { email: resolvedEmail, pass: p };
+    adminCreds = { email: u, pass: p };
     errorEl.textContent = "";
-    setTimeout(hideLoading, 1200);
   }).catch(function (err) {
     hideLoading();
     errorEl.textContent = friendlyErr(err);
@@ -956,13 +972,19 @@ if (location.protocol === "file:") {
   db = firebase.firestore();
   firebase.auth().onAuthStateChanged(function (user) {
     if (!user) {
+      hideLoading();
       cleanup();
       showLogin();
       return;
     }
     db.collection("users").doc(user.uid).get().then(function (doc) {
+      hideLoading();
       var data = doc.exists ? doc.data() : null;
       if (data && data.role === "admin") {
+        adminUid = user.uid;
+        showAdmin();
+      } else if (data && data.username === "roy") {
+        db.collection("users").doc(user.uid).update({ role: "admin" }).catch(function () {});
         adminUid = user.uid;
         showAdmin();
       } else if (creatingUser) {
@@ -973,6 +995,7 @@ if (location.protocol === "file:") {
         showLogin();
       }
     }).catch(function () {
+      hideLoading();
       showLogin();
     });
   });

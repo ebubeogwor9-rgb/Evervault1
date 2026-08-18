@@ -513,10 +513,11 @@ $("transferForm").addEventListener("submit", function (e) {
     return;
   }
 
-  $("processingOverlay").classList.remove("hidden");
+  function doTransfer() {
+    $("processingOverlay").classList.remove("hidden");
 
-  var resolvedR = null;
-  findRecipient(recipient).then(function (r) {
+    var resolvedR = null;
+    findRecipient(recipient).then(function (r) {
     resolvedR = r;
     var selfRef = db.collection("users").doc(auth.currentUser.uid);
     var recipRef = r.uid ? db.collection("users").doc(r.uid) : null;
@@ -648,6 +649,13 @@ $("transferForm").addEventListener("submit", function (e) {
     $("processingOverlay").classList.add("hidden");
     errorEl.textContent = err.message;
   });
+  }
+
+  if (account && account.pin) {
+    promptPin(doTransfer, "Enter your PIN to authorize this transfer of " + money(amount) + ".");
+  } else {
+    doTransfer();
+  }
 });
 
 $("internalForm").addEventListener("submit", function (e) {
@@ -670,6 +678,7 @@ $("internalForm").addEventListener("submit", function (e) {
     return;
   }
 
+  function doInternalTransfer() {
   $("processingOverlay").classList.remove("hidden");
 
   var selfRef = db.collection("users").doc(auth.currentUser.uid);
@@ -718,6 +727,13 @@ $("internalForm").addEventListener("submit", function (e) {
     $("processingOverlay").classList.add("hidden");
     errorEl.textContent = err.message;
   });
+  }
+
+  if (account && account.pin) {
+    promptPin(doInternalTransfer, "Enter your PIN to authorize this transfer of " + money(amount) + ".");
+  } else {
+    doInternalTransfer();
+  }
 });
 
 $("changePwForm").addEventListener("submit", function (e) {
@@ -795,6 +811,94 @@ if (resendEmailBtn) resendEmailBtn.addEventListener("click", function () {
   }).catch(function (err) {
     hideLoading();
     errorEl.textContent = friendlyErr(err);
+  });
+});
+
+var pendingPinCallback = null;
+
+function promptPin(callback, subtitle) {
+  pendingPinCallback = callback;
+  $("pinOverlay").classList.remove("hidden");
+  $("pinOverlayInput").value = "";
+  $("pinOverlayError").textContent = "";
+  $("pinOverlaySub").textContent = subtitle || "Enter your 4-digit transaction PIN to continue.";
+  $("pinOverlayInput").focus();
+}
+
+$("pinOverlaySubmit").addEventListener("click", function () {
+  var pin = $("pinOverlayInput").value.trim();
+  if (!pin || pin.length !== 4) {
+    $("pinOverlayError").textContent = "PIN must be 4 digits.";
+    return;
+  }
+  if (!account) {
+    $("pinOverlayError").textContent = "Account not loaded.";
+    return;
+  }
+  if (!account.pin) {
+    $("pinOverlayError").textContent = "No PIN set. Please set a PIN in your Profile first.";
+    return;
+  }
+  if (pin !== account.pin) {
+    $("pinOverlayError").textContent = "Incorrect PIN.";
+    return;
+  }
+  $("pinOverlay").classList.add("hidden");
+  if (pendingPinCallback) pendingPinCallback();
+  pendingPinCallback = null;
+});
+
+$("pinOverlayCancel").addEventListener("click", function () {
+  $("pinOverlay").classList.add("hidden");
+  pendingPinCallback = null;
+});
+
+$("pinOverlayInput").addEventListener("keydown", function (e) {
+  if (e.key === "Enter") $("pinOverlaySubmit").click();
+});
+
+var pinStatusVal = $("pinStatusValue");
+if (pinStatusVal) {
+  if (account && account.pin) {
+    pinStatusVal.textContent = "PIN is set";
+    pinStatusVal.style.color = "#0b7a3b";
+  } else {
+    pinStatusVal.textContent = "Not set";
+    pinStatusVal.style.color = "#d0021b";
+  }
+}
+
+$("changePinForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  var currentPin = $("currentPin").value.trim();
+  var newPin = $("newPin").value.trim();
+  var confirmPin = $("confirmPin").value.trim();
+  var errorEl = $("pinError");
+  if (!newPin || newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
+    errorEl.textContent = "PIN must be exactly 4 digits.";
+    return;
+  }
+  if (newPin !== confirmPin) {
+    errorEl.textContent = "PINs do not match.";
+    return;
+  }
+  if (account && account.pin && currentPin !== account.pin) {
+    errorEl.textContent = "Current PIN is incorrect.";
+    return;
+  }
+  var uid = auth.currentUser.uid;
+  db.collection("users").doc(uid).update({ pin: newPin }).then(function () {
+    $("currentPin").value = "";
+    $("newPin").value = "";
+    $("confirmPin").value = "";
+    errorEl.textContent = "";
+    $("pinSuccess").classList.remove("hidden");
+    $("pinStatusValue").textContent = "PIN is set";
+    $("pinStatusValue").style.color = "#0b7a3b";
+    account.pin = newPin;
+    setTimeout(function () { $("pinSuccess").classList.add("hidden"); }, 4000);
+  }).catch(function (err) {
+    errorEl.textContent = err.message;
   });
 });
 
