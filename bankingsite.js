@@ -118,7 +118,7 @@ function showSignup() {
   $("signupError").textContent = "";
 }
 
-var PAGES = ["home", "transfer", "deposit", "card", "account", "profile"];
+var PAGES = ["home", "transfer", "deposit", "external", "card", "account", "profile"];
 
 function showPage(page) {
   for (var i = 0; i < PAGES.length; i++) {
@@ -129,6 +129,7 @@ function showPage(page) {
     btns[j].classList.toggle("active", btns[j].getAttribute("data-page") === page);
   }
   if (page === "deposit") renderDepositHistory();
+  if (page === "external") renderExternalAccounts();
 }
 
 function renderHistory(acc) {
@@ -1069,3 +1070,82 @@ document.addEventListener("DOMContentLoaded", function () {
   setupDeposit();
 });
 if (document.readyState !== "loading") setupDeposit();
+
+function renderExternalAccounts() {
+  if (!auth.currentUser) return;
+  var box = $("externalList");
+  if (!box) return;
+  db.collection("users").doc(auth.currentUser.uid).collection("externalAccounts").orderBy("createdAt", "desc").get().then(function (snap) {
+    if (snap.empty) { box.innerHTML = '<div class="ext-empty">No external accounts linked yet.</div>'; return; }
+    var html = "";
+    snap.forEach(function (d) {
+      var a = d.data();
+      var last4 = String(a.acctNum || "").slice(-4);
+      var mask = "••••" + last4;
+      var verified = a.verified ? '<span class="ext-verified">Verified</span>' : '<span class="ext-pending">Pending</span>';
+      html += '<div class="ext-account-card">'
+        + '<div class="ext-info">'
+        + '<div class="ext-bank">' + esc(a.bankName) + ' ' + verified + '</div>'
+        + '<div class="ext-detail">' + esc(a.acctType) + ' ' + mask + ' · Routing ' + esc(a.routing || "").slice(-4) + '</div>'
+        + (a.nickname ? '<div class="ext-nick">' + esc(a.nickname) + '</div>' : '')
+        + '</div>'
+        + '<div class="ext-actions">'
+        + '<button class="secondary ext-delete" data-eid="' + esc(d.id) + '">Remove</button>'
+        + '</div></div>';
+    });
+    box.innerHTML = html;
+    var delBtns = box.querySelectorAll(".ext-delete");
+    for (var i = 0; i < delBtns.length; i++) {
+      delBtns[i].addEventListener("click", function () {
+        var eid = this.getAttribute("data-eid");
+        if (confirm("Remove this external account?")) {
+          db.collection("users").doc(auth.currentUser.uid).collection("externalAccounts").doc(eid).delete().then(function () {
+            renderExternalAccounts();
+          });
+        }
+      });
+    }
+  }).catch(function () {
+    box.innerHTML = '<div class="ext-empty">Could not load external accounts.</div>';
+  });
+}
+
+function setupLinkExternal() {
+  var form = $("linkExternalForm");
+  if (!form) return;
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (!auth.currentUser) return;
+    var errorEl = $("extError");
+    var bankName = $("extBankName").value.trim();
+    var acctType = $("extAcctType").value;
+    var routing = $("extRouting").value.trim();
+    var acctNum = $("extAcctNum").value.trim();
+    var nickname = $("extAcctName").value.trim();
+    if (!bankName) { errorEl.textContent = "Enter the bank name."; return; }
+    if (!routing || routing.length < 9) { errorEl.textContent = "Enter a valid 9-digit routing number."; return; }
+    if (!acctNum) { errorEl.textContent = "Enter the account number."; return; }
+    errorEl.textContent = "";
+    db.collection("users").doc(auth.currentUser.uid).collection("externalAccounts").add({
+      bankName: bankName,
+      acctType: acctType,
+      routing: routing,
+      acctNum: acctNum,
+      nickname: nickname || bankName + " " + acctType,
+      verified: true,
+      createdAt: Date.now()
+    }).then(function () {
+      $("extSuccess").classList.remove("hidden");
+      form.reset();
+      renderExternalAccounts();
+      setTimeout(function () { $("extSuccess").classList.add("hidden"); }, 4000);
+    }).catch(function (err) {
+      errorEl.textContent = err.message;
+    });
+  });
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  setupLinkExternal();
+});
+if (document.readyState !== "loading") setupLinkExternal();

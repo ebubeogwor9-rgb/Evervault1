@@ -216,6 +216,19 @@ body.dark .deposit-upload:hover { border-color: #4d8dff; }
 .deposit-preview { max-width: 100%; max-height: 160px; border-radius: 8px; object-fit: contain; }
 .deposit-preview.hidden { display: none; }
 .deposit-history { margin-top: 10px; }
+
+.ext-account-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+body.dark .ext-account-card { background: #1b2230; border-color: #3a4256; }
+.ext-account-card .ext-info .ext-bank { font-weight: 600; font-size: 15px; }
+.ext-account-card .ext-info .ext-detail { font-size: 12px; color: #5b6b7b; margin-top: 3px; }
+.ext-account-card .ext-info .ext-nick { font-size: 13px; color: #0f6bff; margin-top: 2px; }
+body.dark .ext-account-card .ext-info .ext-detail { color: #8a93a8; }
+body.dark .ext-account-card .ext-info .ext-nick { color: #4d8dff; }
+.ext-account-card .ext-actions { display: flex; gap: 8px; }
+.ext-account-card .ext-actions button { margin-top: 0; padding: 6px 12px; font-size: 12px; }
+.ext-empty { text-align: center; color: #8a9aaa; font-size: 13px; padding: 20px; }
+.ext-verified { display: inline-block; font-size: 11px; background: #e6f7ee; color: #0b7a3b; padding: 2px 8px; border-radius: 10px; margin-left: 8px; font-weight: 600; }
+.ext-pending { display: inline-block; font-size: 11px; background: #fef3cd; color: #856404; padding: 2px 8px; border-radius: 10px; margin-left: 8px; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -266,6 +279,7 @@ body.dark .deposit-upload:hover { border-color: #4d8dff; }
     <button class="nav-btn active" data-page="home">Home</button>
     <button class="nav-btn" data-page="transfer">Transfer</button>
     <button class="nav-btn" data-page="deposit">Deposit</button>
+    <button class="nav-btn" data-page="external">External</button>
     <button class="nav-btn" data-page="card">Card</button>
     <button class="nav-btn" data-page="account">Account</button>
     <button class="nav-btn" data-page="profile">Profile</button>
@@ -406,6 +420,32 @@ body.dark .deposit-upload:hover { border-color: #4d8dff; }
       <h3 style="font-size:15px; margin-bottom:10px;">Recent Deposits</h3>
       <div id="depositHistoryList" class="history-list"></div>
     </div>
+  </div>
+
+  <div id="page-external" class="hidden">
+    <div id="extSuccess" class="success hidden">External account linked successfully.</div>
+    <h2 style="font-size:16px; margin-bottom:6px;">External Accounts</h2>
+    <p class="sub">Link your accounts from other banks to transfer money in and out.</p>
+    <div id="externalList"></div>
+    <hr class="divider">
+    <h2 style="font-size:16px; margin-bottom:10px;">Link a New Account</h2>
+    <form id="linkExternalForm">
+      <label for="extBankName">Bank Name</label>
+      <input type="text" id="extBankName" placeholder="e.g. Chase, Bank of America" required>
+      <label for="extAcctType">Account Type</label>
+      <select id="extAcctType">
+        <option value="checking">Checking</option>
+        <option value="savings">Savings</option>
+      </select>
+      <label for="extRouting">Routing Number</label>
+      <input type="text" id="extRouting" placeholder="e.g. 021000021" required>
+      <label for="extAcctNum">Account Number</label>
+      <input type="text" id="extAcctNum" placeholder="e.g. 123456789" required>
+      <label for="extAcctName">Account Nickname</label>
+      <input type="text" id="extAcctName" placeholder="e.g. My Chase Checking">
+      <button type="submit">Link Account</button>
+    </form>
+    <div class="error" id="extError"></div>
   </div>
 
   <div id="page-card" class="hidden">
