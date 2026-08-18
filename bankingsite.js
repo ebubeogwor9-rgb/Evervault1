@@ -581,20 +581,23 @@ $("transferForm").addEventListener("submit", function (e) {
     if (account) {
       var senderReceipt = "EVERVAULT SECURE BANKING\n"
         + "================================\n\n"
-        + "TRANSFER RECEIPT\n"
+        + "  *** DEBIT ALERT ***\n\n"
+        + "A debit transaction has been made on your account.\n\n"
         + "--------------------------------\n\n"
-        + "Transaction Type:  " + "Transfer Sent" + "\n"
-        + "Status:            COMPLETED\n\n"
-        + "Amount:            " + money(amount) + "\n"
+        + "Transaction Type:  DEBIT - Transfer Sent\n"
+        + "Status:            COMPLETED\n"
+        + "Amount:            -" + money(amount) + "\n"
+        + "Account:           " + acctFromName + " " + acctFromNum + "\n\n"
+        + "Recipient:         " + recipDisplayName + "\n\n"
         + "Transaction ID:    " + txnIdVal + "\n"
-        + "Date & Time:       " + txnTime + "\n\n"
-        + "From:              " + account.name + " (" + acctFromName + " " + acctFromNum + ")\n"
-        + "To:                " + recipDisplayName + "\n\n"
-        + "--------------------------------\n"
-        + "This is an automated notification from Evervault Secure Banking.\n"
-        + "If you did not authorize this transaction, contact support at +1 443 898 1098.";
+        + "Date & Time:       " + txnTime + "\n"
+        + "Balance After:     " + money(res.newBal) + "\n\n"
+        + "--------------------------------\n\n"
+        + "If you did not authorize this transaction,\n"
+        + "contact support immediately at +1 443 898 1098.\n\n"
+        + "Evervault Secure Banking - Automated Notification";
       emailJobs.push(sendTxnEmail(account.email, account.name, {
-        subject: "Evervault - Transfer Sent - " + money(amount),
+        subject: "DEBIT ALERT - " + money(amount) + " sent from your Evervault account",
         message: senderReceipt
       }));
       if (resolvedR && resolvedR.uid) {
@@ -602,22 +605,27 @@ $("transferForm").addEventListener("submit", function (e) {
           if (ds.exists) {
             var rd = ds.data();
             if (rd.email) {
+              var recipAcctField = r.field === "acctCheck" ? "Checking" : "Savings";
+              var recipAcctNum = "•••• " + String(recipient).slice(-4);
               var recipReceipt = "EVERVAULT SECURE BANKING\n"
                 + "================================\n\n"
-                + "TRANSFER RECEIPT\n"
+                + "  *** CREDIT ALERT ***\n\n"
+                + "A credit transaction has been made to your account.\n\n"
                 + "--------------------------------\n\n"
-                + "Transaction Type:  " + "Transfer Received" + "\n"
-                + "Status:            COMPLETED\n\n"
-                + "Amount:            " + money(amount) + "\n"
+                + "Transaction Type:  CREDIT - Transfer Received\n"
+                + "Status:            COMPLETED\n"
+                + "Amount:            +" + money(amount) + "\n"
+                + "Account:           " + recipAcctField + " " + recipAcctNum + "\n\n"
+                + "Sent By:           " + account.name + " (" + acctFromName + " " + acctFromNum + ")\n\n"
                 + "Transaction ID:    " + txnIdVal + "\n"
-                + "Date & Time:       " + txnTime + "\n\n"
-                + "From:              " + account.name + " (" + acctFromName + " " + acctFromNum + ")\n"
-                + "To:                " + rd.name + "\n\n"
-                + "--------------------------------\n"
-                + "This is an automated notification from Evervault Secure Banking.\n"
-                + "If you did not authorize this transaction, contact support at +1 443 898 1098.";
+                + "Date & Time:       " + txnTime + "\n"
+                + "Balance After:     " + money(Number(rd[r.balField] || 0) + amount) + "\n\n"
+                + "--------------------------------\n\n"
+                + "If you did not authorize this transaction,\n"
+                + "contact support immediately at +1 443 898 1098.\n\n"
+                + "Evervault Secure Banking - Automated Notification";
               return sendTxnEmail(rd.email, rd.name, {
-                subject: "Evervault - Transfer Received - " + money(amount),
+                subject: "CREDIT ALERT - " + money(amount) + " received into your Evervault account",
                 message: recipReceipt
               });
             }
