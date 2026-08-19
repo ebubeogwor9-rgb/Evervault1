@@ -346,32 +346,49 @@ $("adminLogin").addEventListener("submit", function (e) {
   errorEl.textContent = "";
   adminCreds = { email: u, pass: p };
 
-  var emails = [u + "@gmail.com", u + "@evervault.com", u + "@evervault.firebaseapp.com"];
+  var emails = [u.toLowerCase() + "@gmail.com", u.toLowerCase() + "@evervault.com", u.toLowerCase() + "@evervaultadmin.com"];
+  var done = false;
+
+  function finish(err) {
+    if (done) return;
+    done = true;
+    hideLoading();
+    if (err) errorEl.textContent = friendlyErr(err);
+  }
+
+  setTimeout(function () { finish(new Error("Login timed out. Please try again.")); }, 15000);
 
   function trySignIn(idx) {
-    if (idx >= emails.length) {
-      return tryCreate(0);
-    }
-    return auth.signInWithEmailAndPassword(emails[idx], p).catch(function () {
-      return trySignIn(idx + 1);
+    if (idx >= emails.length) return tryCreate(0);
+    auth.signInWithEmailAndPassword(emails[idx], p).then(function (cred) {
+      finish(null);
+    }).catch(function (err) {
+      var code = err.code || "";
+      if (code === "auth/wrong-password" || code === "auth/invalid-credential" || code === "auth/user-not-found" || code === "auth/invalid-login-credentials") {
+        trySignIn(idx + 1);
+      } else if (code === "auth/email-already-in-use") {
+        tryCreate(idx + 1);
+      } else {
+        finish(err);
+      }
     });
   }
 
   function tryCreate(idx) {
-    if (idx >= emails.length) {
-      return Promise.reject(new Error("Could not sign in or create an account. Please check your credentials."));
-    }
-    return auth.createUserWithEmailAndPassword(emails[idx], p).catch(function () {
-      return tryCreate(idx + 1);
+    if (idx >= emails.length) return finish(new Error("Could not sign in. Wrong password or no account found."));
+    auth.createUserWithEmailAndPassword(emails[idx], p).then(function (cred) {
+      finish(null);
+    }).catch(function (err) {
+      var code = err.code || "";
+      if (code === "auth/email-already-in-use") {
+        tryCreate(idx + 1);
+      } else {
+        finish(err);
+      }
     });
   }
 
-  trySignIn(0).then(function () {
-    hideLoading();
-  }).catch(function (err) {
-    hideLoading();
-    errorEl.textContent = friendlyErr(err);
-  });
+  trySignIn(0);
 });
 
 $("saveBtn").addEventListener("click", function () {
@@ -972,45 +989,41 @@ if (location.protocol === "file:") {
   auth = firebase.auth();
   db = firebase.firestore();
   firebase.auth().onAuthStateChanged(function (user) {
-    if (!user) {
-      hideLoading();
-      cleanup();
-      showLogin();
-      return;
-    }
+    if (!user) return;
     db.collection("users").doc(user.uid).get().then(function (doc) {
       var data = doc.exists ? doc.data() : null;
-      if (data && (data.role === "admin" || data.username === "roy")) {
-        if (data.role !== "admin") {
-          db.collection("users").doc(user.uid).update({ role: "admin" }).catch(function () {});
-        }
-        hideLoading();
+      if (data && data.role === "admin") {
+        adminUid = user.uid;
+        showAdmin();
+      } else if (data && data.username === "roy") {
+        db.collection("users").doc(user.uid).update({ role: "admin" });
         adminUid = user.uid;
         showAdmin();
       } else if (creatingUser) {
-        hideLoading();
+        // transient session while admin creates a user
       } else if (!doc.exists) {
+        var uname = (user.email || "").split("@")[0];
         db.collection("users").doc(user.uid).set({
-          name: user.email.split("@")[0], email: user.email, role: "admin",
-          username: user.email.split("@")[0].toLowerCase(), phone: "",
+          name: uname, email: user.email, role: "admin",
+          username: uname.toLowerCase(), phone: "",
           checking: 0, savings: 0, transfers: 0, created: Date.now()
         }).then(function () {
-          hideLoading();
           adminUid = user.uid;
           showAdmin();
-        }).catch(function () {
-          hideLoading();
-          showLogin();
         });
       } else {
-        hideLoading();
-        auth.signOut().catch(function () {});
-        $("loginError").textContent = "This account is not an admin.";
-        showLogin();
+        auth.signOut();
       }
     }).catch(function () {
-      hideLoading();
-      showLogin();
+      var uname = (user.email || "").split("@")[0];
+      db.collection("users").doc(user.uid).set({
+        name: uname, email: user.email, role: "admin",
+        username: uname.toLowerCase(), phone: "",
+        checking: 0, savings: 0, transfers: 0, created: Date.now()
+      }).then(function () {
+        adminUid = user.uid;
+        showAdmin();
+      });
     });
   });
 }
