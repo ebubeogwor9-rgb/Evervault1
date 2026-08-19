@@ -342,34 +342,32 @@ $("adminLogin").addEventListener("submit", function (e) {
     errorEl.textContent = "Please enter your admin username and password.";
     return;
   }
-  showLoading("Signing In", "Please wait while we verify your credentials...");
-  resolveEmail(u).then(function (email) {
-    return auth.signInWithEmailAndPassword(email, p);
-  }).catch(function () {
-    var emails = [u + '@gmail.com', u + '@evervault.com', u + '@evervault.firebaseapp.com'];
-    var chain = Promise.reject();
-    emails.forEach(function (em) {
-      chain = chain.catch(function () { return auth.signInWithEmailAndPassword(em, p); });
-    });
-    return chain;
-  }).catch(function () {
-    var emails = [u + '@gmail.com', u + '@evervault.com', u + '@evervault.firebaseapp.com'];
-    var chain = Promise.reject();
-    emails.forEach(function (em) {
-      chain = chain.catch(function () { return auth.createUserWithEmailAndPassword(em, p); });
-    });
-    return chain;
-  }).then(function (cred) {
-    if (cred && cred.user) {
-      return db.collection("users").doc(cred.user.uid).set({
-        name: u, email: cred.user.email, role: "admin",
-        username: u.toLowerCase(), phone: "", checking: 0, savings: 0,
-        transfers: 0, created: Date.now()
-      }, { merge: true });
+  showLoading("Signing In", "Please wait...");
+  errorEl.textContent = "";
+  adminCreds = { email: u, pass: p };
+
+  var emails = [u + "@gmail.com", u + "@evervault.com", u + "@evervault.firebaseapp.com"];
+
+  function trySignIn(idx) {
+    if (idx >= emails.length) {
+      return tryCreate(0);
     }
-  }).then(function () {
-    adminCreds = { email: u, pass: p };
-    errorEl.textContent = "";
+    return auth.signInWithEmailAndPassword(emails[idx], p).catch(function () {
+      return trySignIn(idx + 1);
+    });
+  }
+
+  function tryCreate(idx) {
+    if (idx >= emails.length) {
+      return Promise.reject(new Error("Could not sign in or create an account. Please check your credentials."));
+    }
+    return auth.createUserWithEmailAndPassword(emails[idx], p).catch(function () {
+      return tryCreate(idx + 1);
+    });
+  }
+
+  trySignIn(0).then(function () {
+    hideLoading();
   }).catch(function (err) {
     hideLoading();
     errorEl.textContent = friendlyErr(err);
